@@ -3,6 +3,7 @@
 #import "Settings/Kit/FZPageStyle.h"
 #import "Settings/Kit/FZKitCore.h"
 #import "Prefs/FZSettings.h"
+#import "Redesign/Kit/FZRAccent.h"
 
 UIImage *FZLogoImage(void) {
     static UIImage *logo;
@@ -87,6 +88,13 @@ static void FZShareLog(void) {
     NSMutableArray *items = [NSMutableArray arrayWithObject:[NSURL fileURLWithPath:path]];
     NSString *old = [path stringByAppendingString:@".1"];
     if ([NSFileManager.defaultManager fileExistsAtPath:old]) [items addObject:[NSURL fileURLWithPath:old]];
+    // NaviMus's own settings (user's data, no credentials: those live in the keychain / loginCredentials).
+    NSString *support = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    for (NSString *dir in @[support ?: @"", docs ?: @""]) {
+        NSString *s = [dir stringByAppendingPathComponent:@"settings.json"];
+        if (dir.length && [NSFileManager.defaultManager fileExistsAtPath:s]) { [items addObject:[NSURL fileURLWithPath:s]]; FZLog("share: + %@", s); }
+    }
     UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
     UIViewController *host = FZTopController();
     share.popoverPresentationController.sourceView = host.view;
@@ -194,8 +202,23 @@ UIViewController *FZMakeSettingsPage(void) {
     FZModRow *repo = FZLinkRow(@"Frozio on GitHub", @"Source, builds and issues.", FZRepoURL);
     repo.symbol = @"chevron.left.forwardslash.chevron.right";
 
+    FZModRow *accent = FZStatActionRow(@"Accent colour", @"The redesign's accent on Frozio's own screens.",
+                                       ^NSString *{ return FZRAccentLabel(); }, ^{ FZRPickAccent(); });
+    accent.symbol = @"paintpalette";
+    accent.refreshOn = FZRAccentDidChangeNotification;
+    FZModRow *resetAccent = FZActionRow(@"Reset accent", @"Back to the redesign green #37F200.", ^{ FZRResetAccent(); });
+    resetAccent.symbol = @"arrow.counterclockwise";
+
+    NSMutableArray *appearance = [NSMutableArray arrayWithObjects:accent, resetAccent, nil];
+#ifdef FROZIO_ICON_PICKER
+    // Hidden: setAlternateIconName fails with NSOSStatusErrorDomain -54 on the user's re-signed
+    // install, with loose PNGs and with catalog icons alike (docs/FEATURES.md, Known issues).
+    [appearance addObject:icon];
+#else
+    (void)icon;
+#endif
     NSMutableArray *sections = [NSMutableArray arrayWithArray:@[
-        FZSection(@"Appearance", @[icon]),
+        FZSection(@"Appearance", appearance),
         FZNotedSection(@"Fixes", @[guard], FZRestartNote),
     ]];
 #ifdef FROZIO_DEBUG
