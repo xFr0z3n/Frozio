@@ -185,3 +185,23 @@ Matrix row `artist-block`. Adapted from taurus `Shared/ArtistBlock/` (GPL-3.0, s
 - **Verified on device by the user (build 28, 2026-11-14, iOS 17.5.1):** a blocked artist's song is skipped by NaviMus's own handler, so the event factory exists and NaviMus accepts its event on iOS 17 too.
 - **Not tested:**
   - NaviMus's credit format for multi-artist songs
+
+## Feature: redesigned look, slice 1: app-wide look (`feat/redesign-app-look`)
+
+Matrix rows `redesign-ui`, `redesign-amoled`, `redesign-tabbar` (partial). Strategy (b), the hosting boundary: system UIKit seams only, no NaviMus symbols.
+
+- **What it changes for the user:** Frozio settings → Appearance → **Redesigned look** (glow switch, default **off** until confirmed on device; then it becomes the default). Read at launch: flipping it offers "Close NaviMus". With it on:
+  - NaviMus is always dark, whatever its own appearance setting says, so its pages are black with cards one step lighter (the redesign's field and elevated surfaces).
+  - Tab bar: the selected tab is the redesign accent (default #37F200), the others secondary white.
+  - iOS 26: the system's Liquid Glass tab and navigation bars, as spoti.pw's redesign uses them (tokens `tabbar.system`, `navbar.liquidGlass`).
+  - Before iOS 26 (the user's iOS 17): the redesign's fallback material (`material.glass.fallback`, SystemChromeMaterialDark) behind the tab bar and behind the navigation bar once scrolled; at the top the navigation bar is transparent with a white 34 pt bold large title on black.
+- **Hooks (ObjC runtime via FZHook, only when the switch was on at launch):**
+  - `-[UIViewController setOverrideUserInterfaceStyle:]` and `-[UIWindow setOverrideUserInterfaceStyle:]` (`v@:q`) → always dark. Seen in the harness: SwiftUI's `preferredColorScheme` (NaviMus's appearance setting) lands on the root `UIHostingController`, not the window.
+  - `-[UIWindow becomeKeyWindow]` (`v@:`) → each window dark as it becomes key.
+  - `-[UITabBar setTintColor:]` (`v@:@`) → the accent. SwiftUI's `.tint` (NaviMus's tint) sets the tab bar's own tint and beats the appearance proxy.
+  - `UITabBar` / `UINavigationBar` appearance proxies, set in the constructor before NaviMus builds its UI.
+- **Not changed (by design for this slice):** the inside of NaviMus's screens (rows, player, mini player). Back buttons and other controls keep NaviMus's tint (white by default). Use "Use accent in NaviMus" to make those the accent too.
+- **Tested (Simulator harness, iPhone 17 Pro, iOS 26.5):** the harness now hosts a SwiftUI stand-in shaped like NaviMus (`Harness/NaviMusStandIn.swift`: TabView of NavigationStacks, plain and inset grouped lists, a Settings form, NaviMus's tint). The real `FZSettingsEntry` recognises its Settings tab ("added to NaviMus Settings"). With the stand-in asking for light mode (`-FZHarnessLight YES`): off → light pages and bars; on → black pages, dark glass tab bar with the accent on the selected tab, Library's cards elevated on black, a pushed album page with a white inline title. With `-FZHarnessMaterialBars YES` (the pre-26 path previewed on iOS 26): transparent bar with a large title at the top, chrome blur once scrolled, blurred tab bar. The switch row, glow and restart prompt work.
+- **Not tested:**
+  - on device (iOS 17.5.1): the real material bars, and NaviMus's own screens (player, mini player, sheets)
+  - an iOS 17 Simulator: the runtime couldn't be installed from the command line here (`xcodebuild -downloadPlatform` dies with a bus error on this Mac)

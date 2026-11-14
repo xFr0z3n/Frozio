@@ -6,6 +6,7 @@
 #import "Settings/Kit/FZKitCore.h"
 #import "Prefs/FZSettings.h"
 #import "Redesign/Kit/FZRAccent.h"
+#import "Redesign/FZRAppLook.h"
 
 UIImage *FZLogoImage(void) {
     static UIImage *logo;
@@ -76,6 +77,22 @@ static void FZApplyAppIcon(NSInteger index) {
             });
         }];
     });
+}
+
+#pragma mark - restart
+
+// A switch read at launch: offer to close NaviMus so it applies. nil when it's back to what's running.
+static void FZOfferRestart(NSString *what) {
+    if (!what) return;
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Restart NaviMus?"
+        message:[what stringByAppendingString:@" applies when NaviMus starts. Close it now and open it again."]
+        preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"Close NaviMus" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x) {
+        [[FZSettings defaults] synchronize];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ exit(0); });
+    }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:nil]];
+    [FZTopController() presentViewController:a animated:YES completion:nil];
 }
 
 #pragma mark - diagnostics (debug builds)
@@ -257,7 +274,16 @@ UIViewController *FZMakeSettingsPage(void) {
         return count ? @(count).stringValue : @"None";
     };
 
-    NSMutableArray *appearance = [NSMutableArray arrayWithObjects:accent, resetAccent, inNaviMus, nil];
+    FZModRow *redesign = FZOptionRow(@"Redesigned look",
+                                     @"spoti.pw's redesign on NaviMus's screens: always dark, with its own bars and accent.",
+                                     FZSettingsKeyRedesign);
+    redesign.symbol = @"sparkles";
+    redesign.glows = YES;
+    redesign.info = @"Black throughout, whatever NaviMus's own appearance setting says. On iOS 26 the tab and "
+                    @"navigation bars are the system's Liquid Glass; before iOS 26 they get the redesign's blur.";
+    redesign.changed = ^(BOOL on) { FZOfferRestart(on == FZRRedesignActive() ? nil : @"The redesigned look"); };
+
+    NSMutableArray *appearance = [NSMutableArray arrayWithObjects:redesign, accent, resetAccent, inNaviMus, nil];
 #ifdef FROZIO_ICON_PICKER
     // Hidden: setAlternateIconName fails with NSOSStatusErrorDomain -54 on the user's re-signed
     // install, with loose PNGs and with catalog icons alike (docs/FEATURES.md, Known issues).

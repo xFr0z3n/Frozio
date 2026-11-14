@@ -19,18 +19,25 @@ VERSION := $(shell sed -n 's/^PACKAGE_VERSION = //p' $(REPO)/Makefile)
 SOURCES := main.m $(filter-out $(REPO)/Source/Frozio.m,$(shell find $(REPO)/Source -name '*.m'))
 HEADERS := $(shell find $(REPO)/Source -name '*.h')
 
+OBJDIR  := $(BUILD)/obj
+# swiftc by path: on this Mac `xcrun -f swiftc` dies in xcodebuild (bus error) while the toolchain is fine.
+SWIFTC  ?= $(shell xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc
+TARGET  := $(ARCH)-apple-ios17.0-simulator
+
 CFLAGS := -target $(ARCH)-apple-ios17.0-simulator -isysroot $(SDK) -fobjc-arc -fmodules -g -O0 \
           -Wall -Werror -I$(REPO)/Source -DFROZIO_VERSION=\"$(VERSION)\" -DFROZIO_DEBUG=1 -DFROZIO_HARNESS=1
 FRAMEWORKS := -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
-              -framework CoreText -framework CoreImage -framework UniformTypeIdentifiers -framework MediaPlayer -framework AVFoundation
+              -framework CoreText -framework CoreImage -framework UniformTypeIdentifiers -framework MediaPlayer -framework AVFoundation -framework SwiftUI
 
 .PHONY: all run shot log clean
 
 all: $(APP)/FrozioHarness
 
-$(APP)/FrozioHarness: $(SOURCES) $(HEADERS) Info.plist Makefile
-	@mkdir -p $(APP)/Frozio.bundle
-	xcrun --sdk iphonesimulator clang $(CFLAGS) $(FRAMEWORKS) -o $@ $(SOURCES)
+# Frozio's Objective-C is compiled to objects, then linked by swiftc with the SwiftUI stand-in.
+$(APP)/FrozioHarness: $(SOURCES) $(HEADERS) NaviMusStandIn.swift Info.plist Makefile
+	@mkdir -p $(APP)/Frozio.bundle $(OBJDIR)
+	cd $(OBJDIR) && xcrun --sdk iphonesimulator clang $(CFLAGS) -c $(abspath $(SOURCES))
+	$(SWIFTC) -target $(TARGET) -sdk $(SDK) -g -Onone -parse-as-library NaviMusStandIn.swift $(OBJDIR)/*.o $(FRAMEWORKS) -o $@
 	cp Info.plist $(APP)/Info.plist
 	cp "$(REPO)/layout/Library/Application Support/Frozio.bundle/"* $(APP)/Frozio.bundle/
 	codesign --force --sign - --timestamp=none $(APP)

@@ -5,6 +5,7 @@ NSString *const FZSettingsKeyAppIcon = @"fz.appIcon";
 NSString *const FZSettingsKeyCloudKitGuard = @"fz.cloudKitGuard";
 NSString *const FZSettingsKeyAccentInNaviMus = @"fz.redesign.accent.navimus";
 NSString *const FZSettingsKeyLockScreenLyrics = @"fz.lockScreenLyrics";
+NSString *const FZSettingsKeyRedesign = @"fz.redesign";
 
 @implementation FZSettings
 
@@ -23,6 +24,8 @@ NSString *const FZSettingsKeyLockScreenLyrics = @"fz.lockScreenLyrics";
         FZSettingsKeyCloudKitGuard: @YES,
         FZSettingsKeyAccentInNaviMus: @NO,
         FZSettingsKeyLockScreenLyrics: @NO,
+        // Off until the redesign is confirmed on device; then it becomes the default.
+        FZSettingsKeyRedesign: @NO,
     }];
 }
 
