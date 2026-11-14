@@ -2,6 +2,7 @@
 
 NSString *const FZSettingsSuiteName  = @"com.frozio.tweak";
 NSString *const FZSettingsKeyAppIcon = @"fz.appIcon";
+NSString *const FZSettingsKeyCloudKitGuard = @"fz.cloudKitGuard";
 
 @implementation FZSettings
 
@@ -17,6 +18,7 @@ NSString *const FZSettingsKeyAppIcon = @"fz.appIcon";
 + (void)registerDefaults {
     [[self defaults] registerDefaults:@{
         FZSettingsKeyAppIcon: @"cyan",
+        FZSettingsKeyCloudKitGuard: @YES,
     }];
 }
 

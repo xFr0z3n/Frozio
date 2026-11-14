@@ -8,6 +8,11 @@ on:
         required: false
         default: ""
         type: string
+      display_name:
+        description: "Home-screen name of the app"
+        required: true
+        default: "Frozio"
+        type: string
       ipa_asset:
         description: "Asset name in this repo's DRAFT release named 'ipa-source' (used when ipa_url is empty)"
         required: false
@@ -84,12 +89,22 @@ jobs:
         run: |
           DBG=0; [ "${{ inputs.debug }}" = "true" ] && DBG=1
           make clean all FINALPACKAGE=1 FROZIO_DEBUG=$DBG
-          DYLIB="$(find .theos/obj -name Frozio.dylib -type f | head -n1)"
+          # Exclude the dSYM: it contains a DWARF file also named Frozio.dylib (MH_DSYM, filetype 10),
+          # which dyld refuses ("unloadable mach-o file type 10"); build r3 shipped that by mistake.
+          DYLIB="$(find .theos/obj -name Frozio.dylib -type f -not -path '*.dSYM/*' | head -n1)"
           [ -f "$DYLIB" ] || { echo "::error::Frozio.dylib not built"; exit 1; }
+          echo "== otool -hv"; otool -hv "$DYLIB"
+          otool -hv "$DYLIB" | awk 'NR>3' | grep -qw DYLIB || { echo "::error::$DYLIB is not an MH_DYLIB"; exit 1; }
           cp "$DYLIB" "$RUNNER_TEMP/Frozio.dylib"
+          # Theos sets the jailbreak install name (/Library/MobileSubstrate/DynamicLibraries/...);
+          # a sideloaded dylib should identify as @rpath/Frozio.dylib. Re-sign ad hoc after the edit.
+          install_name_tool -id "@rpath/Frozio.dylib" "$RUNNER_TEMP/Frozio.dylib"
+          ldid -S "$RUNNER_TEMP/Frozio.dylib"
+          echo "== otool -D (install name)"; otool -D "$RUNNER_TEMP/Frozio.dylib"
           echo "== otool -L Frozio.dylib"; otool -L "$RUNNER_TEMP/Frozio.dylib"
           echo "== lipo"; lipo -info "$RUNNER_TEMP/Frozio.dylib"
-          if otool -L "$RUNNER_TEMP/Frozio.dylib" | grep -qiE 'substrate|ellekit|libhooker'; then
+          # Line 1 = file path, line 2 = the dylib's own LC_ID_DYLIB; dependencies start at line 3.
+          if otool -L "$RUNNER_TEMP/Frozio.dylib" | tail -n +3 | grep -qiE 'substrate|ellekit|libhooker'; then
             echo "::error::Frozio.dylib links a hooking runtime; Phase 1 must not."
             exit 1
           fi
@@ -126,7 +141,9 @@ jobs:
           echo "app=$APP exe=$EXE version=$VER build=$BLD bundle=$BID"
           [ "$BID" = "$BUNDLE_ID" ] || { echo "::error::Unexpected bundle ID $BID"; exit 1; }
           [ "$VER" = "1.6.1" ] && [ "$BLD" = "173" ] || echo "::warning::NaviMus $VER ($BLD) is not the verified 1.6.1 (173); Frozio's version gate will keep it inert."
-          otool -l "$APP/$EXE" | grep -A2 LC_ENCRYPTION_INFO | grep cryptid
+          CRYPTID="$(otool -l "$APP/$EXE" | grep -A6 LC_ENCRYPTION_INFO | awk '/cryptid/{print $2; exit}')"
+          echo "cryptid=${CRYPTID:-none}"
+          [ "${CRYPTID:-0}" = "0" ] || { echo "::error::IPA is encrypted (cryptid=$CRYPTID); a decrypted IPA is required"; exit 1; }
           dwarfdump --uuid "$APP/$EXE"
           codesign -d --entitlements :- "$APP" > "$RUNNER_TEMP/orig-ent.plist" 2>/dev/null || true
           [ -s "$RUNNER_TEMP/orig-ent.plist" ] || echo '<?xml version="1.0"?><plist version="1.0"><dict/></plist>' > "$RUNNER_TEMP/orig-ent.plist"
@@ -147,7 +164,23 @@ jobs:
           python3 main/scripts/patch_icons.py --app "$APP" \
             --primary main/Resources/AppIcons/cyan --alternate main/Resources/AppIcons/white
 
-      - name: Check signing secrets are set
+      - name: Set display name
+        env:
+          DISPLAY_NAME: ${{ inputs.display_name }}
+        run: |
+          # Only the home-screen label. CFBundleName/Identifier/Executable stay untouched
+          # (the version gate and NaviMus's own paths depend on them). Arpeggi ships no
+          # InfoPlist.strings that could override it.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$APP/Info.plist"
+          if find "$APP" -name InfoPlist.strings | grep -q .; then
+            echo "::warning::InfoPlist.strings present; a localized CFBundleDisplayName may override '$DISPLAY_NAME'"
+          fi
+          echo "CFBundleDisplayName=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Info.plist")"
+
+      # Signing is OPTIONAL. Without the 5 secrets the IPA is left unsigned (like FrozenMusic)
+      # and is meant to be signed by your own signer (Sideloadly, Feather, ESign, ...).
+      - name: Check signing secrets (optional)
+        id: secrets
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -159,12 +192,18 @@ jobs:
           for v in BUILD_CERTIFICATE_BASE64 P12_PASSWORD PROVISIONING_PROFILE_BASE64 TEAM_ID KEYCHAIN_PASSWORD; do
             [ -n "${!v}" ] || missing+=("$v")
           done
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Missing repository secrets: ${missing[*]} (build and injection above succeeded)"
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"; echo "SIGNED=signed" >> "$GITHUB_ENV"
+          elif [ ${#missing[@]} -eq 5 ]; then
+            echo "sign=false" >> "$GITHUB_OUTPUT"; echo "SIGNED=unsigned" >> "$GITHUB_ENV"
+            echo "::notice::No signing secrets set: producing an UNSIGNED IPA for your own signer."
+          else
+            echo "::error::Signing secrets are partially set (missing: ${missing[*]}). Set all 5 or none."
             exit 1
           fi
 
       - name: Set up signing keychain and profile
+        if: steps.secrets.outputs.sign == 'true'
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -190,6 +229,7 @@ jobs:
           echo "profile: $(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist"), team $(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")"
 
       - name: Derive entitlements for the new team
+        if: steps.secrets.outputs.sign == 'true'
         env:
           TEAM_ID: ${{ secrets.TEAM_ID }}
         run: |
@@ -199,6 +239,7 @@ jobs:
           [ "$PT" = "$TEAM_ID" ] || { echo "::error::TEAM_ID secret does not match the profile's team"; exit 1; }
 
       - name: Sign inside-out (dylibs/frameworks -> extensions -> app)
+        if: steps.secrets.outputs.sign == 'true'
         run: |
           cp "$RUNNER_TEMP/profile.mobileprovision" "$APP/embedded.mobileprovision"
           rm -rf "$APP/_CodeSignature"
@@ -216,10 +257,22 @@ jobs:
           # 3. the app
           codesign -f -s "$IDENTITY" --keychain "$KC" --entitlements "$RUNNER_TEMP/ent.plist" --generate-entitlement-der "$APP"
 
-      - name: Verify
+      - name: Verify injection and icons
+        run: |
+          echo "== otool -L (main binary)"; otool -L "$APP/$EXE"
+          otool -L "$APP/$EXE" | grep -q '@rpath/Frozio.dylib' || { echo "::error::Frozio.dylib not in load commands"; exit 1; }
+          otool -l "$APP/$EXE" | grep -A2 LC_RPATH | grep -q '@executable_path/Frameworks' || { echo "::error::LC_RPATH @executable_path/Frameworks missing"; exit 1; }
+          test -f "$APP/Frameworks/Frozio.dylib" && lipo -info "$APP/Frameworks/Frozio.dylib"
+          echo "== otool -hv Frozio.dylib"; otool -hv "$APP/Frameworks/Frozio.dylib"
+          otool -hv "$APP/Frameworks/Frozio.dylib" | awk 'NR>3' | grep -qw DYLIB || { echo "::error::injected Frozio.dylib is not an MH_DYLIB"; exit 1; }
+          echo "== otool -L Frozio.dylib"; otool -L "$APP/Frameworks/Frozio.dylib"
+          echo "== icons"; plutil -p "$APP/Info.plist" | sed -n '/CFBundleIcons/,/^  }/p'
+          ls -la "$APP"/AppIcon* "$APP"/FrozioWhite* "$APP/Frozio.bundle"
+
+      - name: Verify signature
+        if: steps.secrets.outputs.sign == 'true'
         run: |
           codesign --verify --deep --strict --verbose=2 "$APP"
-          echo "== otool -L"; otool -L "$APP/$EXE" | grep -E 'Frozio|@rpath'
           echo "== entitlements"; codesign -d --entitlements :- "$APP" 2>/dev/null | plutil -p -
           echo "== signer"; codesign -dvv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier|Identifier='
 
@@ -227,7 +280,7 @@ jobs:
         run: |
           VER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
           KIND=release; [ "${{ inputs.debug }}" = "true" ] && KIND=debug
-          OUT="Frozio-NaviMus-$VER-r${{ github.run_number }}-$KIND.ipa"
+          OUT="Frozio-NaviMus-$VER-r${{ github.run_number }}-$KIND-$SIGNED.ipa"
           (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/$OUT" Payload)
           echo "OUT=$OUT" >> "$GITHUB_ENV"
           ls -la "$GITHUB_WORKSPACE/$OUT"

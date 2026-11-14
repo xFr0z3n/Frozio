@@ -20,7 +20,11 @@ See `docs/PHASE0_REPORT.md`, `docs/FEATURE_MATRIX.md` and `docs/DESIGN_TOKENS.md
 
 ## Building an IPA
 
-The **Build, inject, sign and release Frozio** workflow (Actions → Run workflow) needs these repository secrets:
+Run the **Build, inject, sign and release Frozio** workflow (Actions → Run workflow).
+
+**By default it produces an unsigned IPA**, like FrozenMusic. Sign it with your own signer (Sideloadly, Feather, ESign, …).
+
+**Optional:** to have CI sign it, set all five of these repository secrets:
 
 | Secret | Content |
 |---|---|
