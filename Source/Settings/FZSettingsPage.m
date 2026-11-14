@@ -17,7 +17,21 @@ UIImage *FZLogoImage(void) {
 
 #pragma mark - app icon
 
-static NSString *const kAltIconWhite = @"White"; // CFBundleAlternateIcons key written by scripts/patch_icons.py
+// The white icon's CFBundleAlternateIcons key: "AppIcon-White" when CI rebuilt the asset catalog
+// (scripts/rebuild_assets.sh), "White" for the loose-PNG fallback (scripts/patch_icons.py).
+static NSString *FZWhiteIconName(void) {
+    static NSString *name;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSDictionary *alts = NSBundle.mainBundle.infoDictionary[@"CFBundleIcons"][@"CFBundleAlternateIcons"];
+        if ([alts isKindOfClass:NSDictionary.class]) {
+            for (NSString *key in alts) if ([key rangeOfString:@"White"].location != NSNotFound) { name = key; break; }
+        }
+        FZLog("app icon: white alternate key = %@ (alternates: %@)", name ?: @"<none>", alts.allKeys);
+    });
+    return name;
+}
+#define kAltIconWhite FZWhiteIconName()
 static NSNotificationName const FZAppIconDidChange = @"FZAppIconDidChange";
 
 // What iOS shows right now is the source of truth (not a stored preference).

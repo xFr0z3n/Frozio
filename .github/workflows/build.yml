@@ -171,10 +171,17 @@ jobs:
           "$INSERT_DYLIB" --inplace --all-yes "@rpath/Frozio.dylib" "$APP/$EXE"
           otool -L "$APP/$EXE" | grep Frozio
 
-      - name: Install app icons (cyan primary, white alternate)
+      - name: Install app icons (asset catalog; loose-PNG fallback)
         run: |
-          python3 main/scripts/patch_icons.py --app "$APP" \
-            --primary main/Resources/AppIcons/cyan --alternate main/Resources/AppIcons/white
+          # Catalog icons are what iOS supports for setAlternateIconName (loose PNGs fail with -54).
+          if bash main/scripts/rebuild_assets.sh "$APP" "$GITHUB_WORKSPACE/main" "$RUNNER_TEMP/assets"; then
+            echo "ICON_MODE=catalog" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Asset catalog rebuild failed; falling back to loose-PNG icons (icon switching may fail with -54)."
+            python3 main/scripts/patch_icons.py --app "$APP" \
+              --primary main/Resources/AppIcons/cyan --alternate main/Resources/AppIcons/white
+            echo "ICON_MODE=loose" >> "$GITHUB_ENV"
+          fi
 
       - name: Expose Documents in the Files app (debug builds only)
         if: ${{ inputs.debug }}
@@ -290,7 +297,11 @@ jobs:
           otool -hv "$APP/Frameworks/Frozio.dylib" | awk 'NR>3' | grep -qw DYLIB || { echo "::error::injected Frozio.dylib is not an MH_DYLIB"; exit 1; }
           echo "== otool -L Frozio.dylib"; otool -L "$APP/Frameworks/Frozio.dylib"
           echo "== icons"; plutil -p "$APP/Info.plist" | sed -n '/CFBundleIcons/,/^  }/p'
-          ls -la "$APP"/AppIcon* "$APP"/FrozioWhite* "$APP/Frozio.bundle"
+          echo "icon mode: $ICON_MODE"
+          ls -la "$APP"/AppIcon* "$APP/Frozio.bundle"
+          if [ "$ICON_MODE" = catalog ]; then
+            xcrun --sdk iphoneos assetutil --info "$APP/Assets.car" | python3 -c "import json,sys; print(sorted({r.get('Name') for r in json.load(sys.stdin)[1:] if r.get('Name')}))"
+          fi
 
       - name: Verify signature
         if: steps.secrets.outputs.sign == 'true'
