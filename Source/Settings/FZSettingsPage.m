@@ -88,12 +88,35 @@ static void FZShareLog(void) {
     NSMutableArray *items = [NSMutableArray arrayWithObject:[NSURL fileURLWithPath:path]];
     NSString *old = [path stringByAppendingString:@".1"];
     if ([NSFileManager.defaultManager fileExistsAtPath:old]) [items addObject:[NSURL fileURLWithPath:old]];
-    // NaviMus's own settings (user's data, no credentials: those live in the keychain / loginCredentials).
-    NSString *support = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
-    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
-    for (NSString *dir in @[support ?: @"", docs ?: @""]) {
-        NSString *s = [dir stringByAppendingPathComponent:@"settings.json"];
-        if (dir.length && [NSFileManager.defaultManager fileExistsAtPath:s]) { [items addObject:[NSURL fileURLWithPath:s]]; FZLog("share: + %@", s); }
+    // NaviMus's own preferences file, to learn the tint format. The data folders are listed in the
+    // log by name and size only (no contents); the only file attached is one named "settings*".
+    // Server, login and credential files are never attached (and passwords live in the keychain).
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSArray<NSString *> *roots = @[
+        NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject ?: @"",
+        NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject ?: @"",
+        NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES).firstObject ?: @"",
+    ];
+    NSArray<NSString *> *skip = @[@"login", @"credential", @"server", @"auth", @"account", @"configuration"];
+    for (NSString *root in roots) {
+        if (!root.length) continue;
+        NSDirectoryEnumerator<NSString *> *e = [fm enumeratorAtPath:root];
+        NSUInteger listed = 0;
+        for (NSString *rel in e) {
+            if (e.level > 3) { [e skipDescendants]; continue; }
+            NSString *full = [root stringByAppendingPathComponent:rel];
+            NSString *name = rel.lastPathComponent.lowercaseString;
+            if ([name hasSuffix:@".sqlite"] || [name hasSuffix:@"-wal"] || [name hasSuffix:@"-shm"] || [rel hasPrefix:@"Caches"]) continue;
+            NSDictionary *a = [e fileAttributes];
+            if (![a.fileType isEqualToString:NSFileTypeRegular]) continue;
+            if (listed++ < 200) FZLog("data: %@/%@ (%llu B)", root.lastPathComponent, rel, a.fileSize);
+            BOOL sensitive = NO;
+            for (NSString *s in skip) if ([name containsString:s]) sensitive = YES;
+            if (!sensitive && [name hasPrefix:@"settings"] && a.fileSize < 256 * 1024) {
+                [items addObject:[NSURL fileURLWithPath:full]];
+                FZLog("share: + %@", rel);
+            }
+        }
     }
     UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
     UIViewController *host = FZTopController();
