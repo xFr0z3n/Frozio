@@ -3,7 +3,8 @@
 // NaviMus is an arm64 device binary, so it can't run in the Simulator on this Mac. The harness
 // compiles Frozio's own sources for the Simulator and stands in for NaviMus's Settings tab: a
 // dark navigation stack titled "Settings", with the Frozio entry button top-right as on device.
-// Frozio.m (the constructor and version gate) is not linked, so no hook is ever installed here.
+// Frozio.m (the constructor and version gate) is not linked; only the system-class hooks that are safe
+// outside NaviMus (Now Playing, remote commands) are installed, as Frozio.m would.
 //
 // Launch argument -FZHarnessOpenSettings YES (the default for `make run`) opens Frozio settings
 // straight away, so a rebuild lands on the page being worked on.
@@ -14,6 +15,7 @@
 #import "Settings/FZSettingsPage.h"
 #import "Settings/Kit/FZPage.h"
 #import "Lyrics/FZLockScreenLyrics.h"
+#import "ArtistBlock/FZArtistBlock.h"
 
 #pragma mark - lyrics demo
 
@@ -68,15 +70,33 @@ static void startLyricsDemo(void) {
     MPRemoteCommandCenter *commands = MPRemoteCommandCenter.sharedCommandCenter;
     [commands.playCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *e) { return MPRemoteCommandHandlerStatusSuccess; }];
     [commands.pauseCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *e) { return MPRemoteCommandHandlerStatusSuccess; }];
-    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = @{
-        MPMediaItemPropertyTitle: @"Harness Song",
-        MPMediaItemPropertyArtist: @"Harness Artist",
-        MPMediaItemPropertyAlbumTitle: @"Frozio Harness",
-        MPMediaItemPropertyPlaybackDuration: @40,
-        MPNowPlayingInfoPropertyElapsedPlaybackTime: @0,
-        MPNowPlayingInfoPropertyPlaybackRate: @1,
-        MPNowPlayingInfoPropertyExternalContentIdentifier: kDemoSongID,
+    // A queue, and ⏭ moving through it the way NaviMus's handler does, so artist block can skip.
+    // -FZHarnessDemoStart <n> starts at song n.
+    static NSArray<NSArray<NSString *> *> *queue;
+    static NSInteger playing;
+    queue = @[@[kDemoSongID, @"Harness Song", @"Harness Artist"],
+              @[@"harness-2", @"Second Song", @"Blocked Band feat. Guest Singer"],
+              @[@"harness-3", @"Third Song", @"Guest Singer & Harness Artist"],
+              @[@"harness-4", @"Fourth Song", @"Harness Artist"]];
+    void (^play)(NSInteger) = ^(NSInteger index) {
+        playing = index % (NSInteger)queue.count;
+        NSArray<NSString *> *song = queue[(NSUInteger)playing];
+        MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = @{
+            MPMediaItemPropertyTitle: song[1],
+            MPMediaItemPropertyArtist: song[2],
+            MPMediaItemPropertyAlbumTitle: @"Frozio Harness",
+            MPMediaItemPropertyPlaybackDuration: @40,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: @0,
+            MPNowPlayingInfoPropertyPlaybackRate: @1,
+            MPNowPlayingInfoPropertyExternalContentIdentifier: song[0],
+        };
+        NSLog(@"[harness] now playing %@ by %@", song[1], song[2]);
     };
+    [commands.nextTrackCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *e) {
+        play(playing + 1);
+        return MPRemoteCommandHandlerStatusSuccess;
+    }];
+    play([NSUserDefaults.standardUserDefaults integerForKey:@"FZHarnessDemoStart"]);
 }
 
 @interface FZHarnessSettingsStandIn : UIViewController
@@ -131,6 +151,7 @@ static void startLyricsDemo(void) {
     [FZSettings registerDefaults];
     FZRegisterPages();
     FZInstallLockScreenLyrics();   // a pass-through system hook, safe outside NaviMus
+    FZInstallArtistBlock();
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessLyricsDemo"]) startLyricsDemo();
 
     UITabBarController *tabs = [UITabBarController new];

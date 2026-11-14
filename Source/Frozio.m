@@ -10,6 +10,7 @@
 #import "Settings/Kit/FZPage.h"
 #import "Redesign/FZNaviMusTint.h"
 #import "Lyrics/FZLockScreenLyrics.h"
+#import "ArtistBlock/FZArtistBlock.h"
 
 __attribute__((constructor)) static void FrozioInit(void) {
     @autoreleasepool {
@@ -29,5 +30,8 @@ __attribute__((constructor)) static void FrozioInit(void) {
         // Feature modules install here, each checking FZSettings and its own preconditions.
         // Lock screen lyrics: a pass-through hook that reads its switch live, so it installs either way.
         FZInstallLockScreenLyrics();
+        // Blocked artists: after lyrics, so it sees NaviMus's own Now Playing info; before main(), so
+        // NaviMus's next-track handler is seen as it registers.
+        FZInstallArtistBlock();
     }
 }

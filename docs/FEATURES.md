@@ -169,3 +169,20 @@ Matrix row `lockscreen-lyrics`. Adapted from taurus `Shared/LockScreenLyrics/Loc
 - **Not tested:**
   - CarPlay
   - a song with a non-zero offset (sign of the offset)
+
+## Feature: blocked artists (`feat/artist-block`)
+
+Matrix row `artist-block`. Adapted from taurus `Shared/ArtistBlock/` (GPL-3.0, see `LICENSES.md`).
+
+- **What it changes for the user:** Frozio settings → Playback → **Blocked artists** (row shows the count, or Off). The page has the **Skip blocked artists** switch (default off), **The main artist** / **Main or featured**, **Block from what's playing…** (the playing credit, then each name in it), **Block by name…**, and the list (swipe to unblock). A song by a blocked artist is skipped as it starts playing. Applies right away.
+- **Matching:** by name, as NaviMus reports it in Now Playing (`MPMediaItemPropertyArtist`); NaviMus exposes no artist IDs here. Case-, accent- and width-insensitive. A song is blocked when its whole credit is blocked, or its first name is, or (Main or featured) any name in it. Credits split on `,` `;` `&` `/` `feat.` `ft.` `featuring`.
+- **Skip:** NaviMus's own next-track handler. `-[MPRemoteCommand addTargetWithHandler:]` is hooked so the handler NaviMus registers on `MPRemoteCommandCenter.nextTrackCommand` is kept (Frozio's constructor runs before NaviMus registers it). Skipping calls that handler with an event from `+[MPRemoteCommandEvent eventWithCommand:mediaRemoteType:options:]`, typed by the command's own `-mediaRemoteCommandType`. That's the same path the lock screen's Next button takes, so NaviMus's queue stays in step.
+  - The factory is private MediaPlayer API. It's looked up at run time and used only if its types are exactly `@@:@I@` (and `I@:` for the type getter); otherwise nothing is skipped and the log says so. `-[MPRemoteCommandEvent init]` aborts, which is why it isn't used.
+- **When:** once per song (`ExternalContentIdentifier`), only while the reported rate is above 0, so a paused song restored at launch isn't skipped until it plays. After 25 blocked songs in a row it stops skipping until an unblocked song plays.
+- **Hooks:** `-[MPRemoteCommand addTargetWithHandler:]` (`@@:@?`) and `-[MPNowPlayingInfoCenter setNowPlayingInfo:]` (`v@:@`), public MediaPlayer API via `FZHook`. Installed after lock screen lyrics, so it sees NaviMus's own info (lyrics re-sends go straight to the original setter). No NaviMus symbols.
+- **Tested (Simulator harness, iPhone 17 Pro, iOS 26.5):** the harness demo has a four-song queue and registers a next-track handler as NaviMus does. With "Blocked Band" blocked (typed lowercase, stored as typed with auto-capitalisation): "Second Song" by "Blocked Band feat. Guest Singer" was skipped to "Third Song" by "Guest Singer & Harness Artist", which stayed (main artist not blocked). With Main or featured and "Harness Artist" also blocked, every song was blocked: 25 skips, then `25 blocked songs in a row; not skipping any more`. The page, Block by name, Block from what's playing (already-blocked names greyed out) and the root row render. Release and debug Theos builds pass.
+- **Found while testing:** the first version created the event with `-[MPRemoteCommandEvent init]`, which killed the app; replaced by the factory above.
+- **Not tested:**
+  - on device with NaviMus's real handler and queue (whether NaviMus's handler accepts the event and moves its own queue)
+  - the factory on iOS 17 (checked only in the iOS 26.5 Simulator; on a mismatch nothing is skipped)
+  - NaviMus's credit format for multi-artist songs

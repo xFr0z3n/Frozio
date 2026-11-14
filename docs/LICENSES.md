@@ -41,6 +41,8 @@ Every borrowed file or block carries a header comment `// Adapted from <repo>/<p
 | `Source/Settings/FZAboutPage.h` | `taurus/tweak/Sources/App/About/About.h` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
 | `Source/Settings/FZAboutPage.m` | `taurus/tweak/Sources/App/About/AboutSettings.m`, `Backup.m`, `Licenses.m` @ fe3211c (renamed SG→FZ, Spotify-only parts removed, Frozio settings suite) | GPL-3.0 |
 | `Source/Lyrics/FZLockScreenLyrics.m` | `taurus/tweak/Sources/Shared/LockScreenLyrics/LockScreenLyrics.x` @ fe3211c (renamed SG→FZ, Logos → FZHook, Spotify karaoke state → NaviMus's saved lyrics) | GPL-3.0 |
+| `Source/ArtistBlock/FZArtistSkip.m` | `taurus/tweak/Sources/Shared/ArtistBlock/ArtistSkip.x`, `ArtistBlock.m` @ fe3211c (renamed SG→FZ, Logos → FZHook, Spotify player → NaviMus's Now Playing info and next-track handler) | GPL-3.0 |
+| `Source/ArtistBlock/FZArtistBlockPage.m` | `taurus/tweak/Sources/Shared/ArtistBlock/ArtistBlockSettings.m` @ fe3211c (renamed SG→FZ, names instead of URIs, Block by name added) | GPL-3.0 |
 | `Source/Redesign/Kit/FZRAccent.m` | storage and picker from `taurus/tweak/Sources/Redesigned/Kit/SGRAccent.x` @ fe3211c (colour-swap hooks not ported) | GPL-3.0 |
 
 ## Build-time tools (not shipped)
