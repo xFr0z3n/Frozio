@@ -45,6 +45,17 @@ void FZHideGlassFrom(UIView *host, NSUInteger count) {
     for (NSUInteger i = count; i < panes.count; i++) panes[i].hidden = YES;
 }
 
+// Frozio: iOS 26 SDK API (UICornerConfiguration / UICornerRadius), declared here because CI builds
+// with an older SDK. Every call below is guarded by NSClassFromString / respondsToSelector:.
+@interface NSObject (FZiOS26Corners)
++ (id)capsuleConfiguration;
++ (id)configurationWithUniformRadius:(id)radius;
++ (id)fixedRadius:(CGFloat)radius;
+@end
+@interface UIView (FZiOS26Corners)
+- (void)setCornerConfiguration:(id)configuration;
+@end
+
 void FZShapeGlass(UIView *glass, CGFloat radius, BOOL capsule) {
     Class config = NSClassFromString(@"UICornerConfiguration");
     Class cornerRadius = NSClassFromString(@"UICornerRadius");
