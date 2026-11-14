@@ -147,7 +147,10 @@ jobs:
           python3 main/scripts/patch_icons.py --app "$APP" \
             --primary main/Resources/AppIcons/cyan --alternate main/Resources/AppIcons/white
 
-      - name: Check signing secrets are set
+      # Signing is OPTIONAL. Without the 5 secrets the IPA is left unsigned (like FrozenMusic)
+      # and is meant to be signed by your own signer (Sideloadly, Feather, ESign, ...).
+      - name: Check signing secrets (optional)
+        id: secrets
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -159,12 +162,18 @@ jobs:
           for v in BUILD_CERTIFICATE_BASE64 P12_PASSWORD PROVISIONING_PROFILE_BASE64 TEAM_ID KEYCHAIN_PASSWORD; do
             [ -n "${!v}" ] || missing+=("$v")
           done
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Missing repository secrets: ${missing[*]} (build and injection above succeeded)"
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"; echo "SIGNED=signed" >> "$GITHUB_ENV"
+          elif [ ${#missing[@]} -eq 5 ]; then
+            echo "sign=false" >> "$GITHUB_OUTPUT"; echo "SIGNED=unsigned" >> "$GITHUB_ENV"
+            echo "::notice::No signing secrets set: producing an UNSIGNED IPA for your own signer."
+          else
+            echo "::error::Signing secrets are partially set (missing: ${missing[*]}). Set all 5 or none."
             exit 1
           fi
 
       - name: Set up signing keychain and profile
+        if: steps.secrets.outputs.sign == 'true'
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -190,6 +199,7 @@ jobs:
           echo "profile: $(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist"), team $(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")"
 
       - name: Derive entitlements for the new team
+        if: steps.secrets.outputs.sign == 'true'
         env:
           TEAM_ID: ${{ secrets.TEAM_ID }}
         run: |
@@ -199,6 +209,7 @@ jobs:
           [ "$PT" = "$TEAM_ID" ] || { echo "::error::TEAM_ID secret does not match the profile's team"; exit 1; }
 
       - name: Sign inside-out (dylibs/frameworks -> extensions -> app)
+        if: steps.secrets.outputs.sign == 'true'
         run: |
           cp "$RUNNER_TEMP/profile.mobileprovision" "$APP/embedded.mobileprovision"
           rm -rf "$APP/_CodeSignature"
@@ -216,10 +227,20 @@ jobs:
           # 3. the app
           codesign -f -s "$IDENTITY" --keychain "$KC" --entitlements "$RUNNER_TEMP/ent.plist" --generate-entitlement-der "$APP"
 
-      - name: Verify
+      - name: Verify injection and icons
+        run: |
+          echo "== otool -L (main binary)"; otool -L "$APP/$EXE"
+          otool -L "$APP/$EXE" | grep -q '@rpath/Frozio.dylib' || { echo "::error::Frozio.dylib not in load commands"; exit 1; }
+          otool -l "$APP/$EXE" | grep -A2 LC_RPATH | grep -q '@executable_path/Frameworks' || { echo "::error::LC_RPATH @executable_path/Frameworks missing"; exit 1; }
+          test -f "$APP/Frameworks/Frozio.dylib" && lipo -info "$APP/Frameworks/Frozio.dylib"
+          echo "== otool -L Frozio.dylib"; otool -L "$APP/Frameworks/Frozio.dylib"
+          echo "== icons"; plutil -p "$APP/Info.plist" | sed -n '/CFBundleIcons/,/^  }/p'
+          ls -la "$APP"/AppIcon* "$APP"/FrozioWhite* "$APP/Frozio.bundle"
+
+      - name: Verify signature
+        if: steps.secrets.outputs.sign == 'true'
         run: |
           codesign --verify --deep --strict --verbose=2 "$APP"
-          echo "== otool -L"; otool -L "$APP/$EXE" | grep -E 'Frozio|@rpath'
           echo "== entitlements"; codesign -d --entitlements :- "$APP" 2>/dev/null | plutil -p -
           echo "== signer"; codesign -dvv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier|Identifier='
 
@@ -227,7 +248,7 @@ jobs:
         run: |
           VER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
           KIND=release; [ "${{ inputs.debug }}" = "true" ] && KIND=debug
-          OUT="Frozio-NaviMus-$VER-r${{ github.run_number }}-$KIND.ipa"
+          OUT="Frozio-NaviMus-$VER-r${{ github.run_number }}-$KIND-$SIGNED.ipa"
           (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/$OUT" Payload)
           echo "OUT=$OUT" >> "$GITHUB_ENV"
           ls -la "$GITHUB_WORKSPACE/$OUT"
