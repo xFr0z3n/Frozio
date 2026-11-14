@@ -3,6 +3,7 @@
 // remote-config flags don't exist in NaviMus, so the flag override API is inert.
 #pragma once
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
 #import "Core/FZLog.h"
 #import "Settings/Kit/FZViewTree.h"
 
