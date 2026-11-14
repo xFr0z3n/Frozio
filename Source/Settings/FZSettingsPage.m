@@ -1,4 +1,5 @@
 #import "FZSettingsPage.h"
+#import "Settings/FZAboutPage.h"
 #import "Settings/Kit/FZModPage.h"
 #import "Settings/Kit/FZPageStyle.h"
 #import "Settings/Kit/FZKitCore.h"
@@ -222,8 +223,9 @@ UIViewController *FZMakeSettingsPage(void) {
     guard.info = @"Re-signed apps often get iCloud containers without push notifications. SwiftData then tries "
                  @"to sync through CloudKit, and CloudKit aborts the app.";
 
-    FZModRow *repo = FZLinkRow(@"Frozio on GitHub", @"Source, builds and issues.", FZRepoURL);
-    repo.symbol = @"chevron.left.forwardslash.chevron.right";
+    FZModRow *about = FZPageRow(@"About", ^UIViewController *{ return FZAboutPage(); });
+    about.subtitle = @"Version, licenses, backup and reset.";
+    about.symbol = @"info.circle";
 
     FZModRow *accent = FZStatActionRow(@"Accent colour", @"The redesign's accent on Frozio's own screens.",
                                        ^NSString *{ return FZRAccentLabel(); }, ^{ FZRPickAccent(); });
@@ -259,7 +261,7 @@ UIViewController *FZMakeSettingsPage(void) {
     clear.symbol = @"trash";
     [sections addObject:FZNotedSection(@"Diagnostics", @[share, clear], @"Debug build: Frozio writes everything it does to this log.")];
 #endif
-    [sections addObject:FZSection(@"About", @[repo])];
+    [sections addObject:FZSection(@"About", @[about])];
     return [[FZSettingsRootPage alloc] initWithTitle:@"Frozio" intro:nil sections:sections footer:nil];
 }
 
