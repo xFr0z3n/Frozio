@@ -144,8 +144,8 @@ Matrix rows `about-links`, `backup`, `reset-all`. Adapted from taurus `App/About
 - **Hooks:** none.
 - **Fix found while testing:** an alert presented while the document picker is still dismissing came up half drawn (title only, no buttons). The import confirmation now waits for the picker's dismissal to finish.
 - **Tested (Simulator harness, iPhone 17 Pro, iOS 26.5):** export writes `{"fz.redesign.accent.navimus": true}` with versions; Save to Files; reset empties the suite and closes the app; import of that file restores the key (`import: set 1 keys, skipped 0`) and closes the app; Licenses page renders. Release and debug Theos builds pass.
+- **Verified on device by the user (build 27, 2026-11-14):** export, import and the About page work inside NaviMus.
 - **Not tested:**
-  - on device, inside NaviMus (the About row lives in Frozio's own sheet, so behaviour should match the harness)
   - importing a file from another Frozio version with different keys
 
 ## Feature: lock screen lyrics (`feat/lockscreen-lyrics`)
@@ -159,13 +159,13 @@ Matrix row `lockscreen-lyrics`. Adapted from taurus `Shared/LockScreenLyrics/Loc
   - folder helper `0x1008e9f80` → `NSApplicationSupportDirectory` (`0xe`) + `0x1008e87e4`, which maps case 6 → `"lyrics"`, case 5 → `"database"`, under `"Arpeggi/" + <database id>`
   - file name: CryptoKit SHA-256 (`0x1008ebc6c`) of `"<songID>_<source>"` + `".json"`; Frozio doesn't recompute it and indexes files by their `songID` field instead
   - decoded with `JSONDecoder` (`0x1008f522c`) into `Arpeggi.CachedLyrics` (`songID`, `offset`, `synced`, `syncedLines{start, value}`, `source`; `swift_dump_demangled.txt:2592`)
-  - song identity: NaviMus sets `MPNowPlayingInfoPropertyExternalContentIdentifier` (`0x100297bb4`). That it holds the same song ID as the cache file is **inferred, not verified**.
+  - song identity: NaviMus sets `MPNowPlayingInfoPropertyExternalContentIdentifier` (`0x100297bb4`); it matches the cache file's `songID` (confirmed on device, build 27).
 - **Hooks:** `-[MPNowPlayingInfoCenter setNowPlayingInfo:]` (`v@:@`) and `-[MPNowPlayingInfoCenter nowPlayingInfo]` (`@@:`), public MediaPlayer API via `FZHook` (ObjC runtime). No NaviMus symbols are hooked. NaviMus reads back its own dictionary, never the edited one.
 - **Fail-safe:** either hook missing or with other types → both stay off (the setter is restored if the getter fails) and NaviMus's info goes out untouched. No ID, no saved file, unreadable JSON or `synced: false` → the artist stays. Switch off → the artist is put back at once. The timer runs only while the reported rate is above 0.
 - **Offset:** applied as OpenSubsonic documents it (positive shows lyrics sooner). Not verified against NaviMus's own lyrics view.
 - **Debug log:** each change logs the elapsed time and "a line (N chars)" or "(artist)"; the text itself is logged only in the Simulator harness. `lyrics: none saved by NaviMus for the playing song yet` means no cache file matched the song's ID.
 - **Tested (Simulator harness, iPhone 17 Pro, iOS 26.5, `-FZHarnessLyricsDemo YES`):** the harness writes a CachedLyrics file under `Application Support/Arpeggi/harness-db/lyrics/`, plays silent audio and sets Now Playing info the way NaviMus does. The hooks install, the file is indexed, and the log shows each line at its time (1.0, 5.0, 9.0 s), the 78-character line split into three pieces (9.0, 10.5, 11.8 s), the empty line restoring the artist (13.0 s), and the artist returning 8 s into the last line (31.0 s). Release and debug Theos builds pass.
+- **Verified on device by the user (build 27, 2026-11-14):** the sung line shows in place of the artist on the lock screen and advances with the song, which also confirms that NaviMus's `ExternalContentIdentifier` matches the cache file's `songID`.
 - **Not tested:**
-  - on device: that the lock screen, Control Center and CarPlay show the line (the Simulator draws no Now Playing panel)
-  - that NaviMus's `ExternalContentIdentifier` equals the cache file's `songID`
-  - NaviMus's offset sign, and how soon NaviMus saves lyrics for a song that's playing
+  - CarPlay
+  - a song with a non-zero offset (sign of the offset)
