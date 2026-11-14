@@ -226,3 +226,26 @@ Findings so far, and a debug probe for what only the device can show.
   - the views in the bottom 220 pt of the tab bar controller (mini player, tab bar)
   - the navigation bar's views (bar buttons): class, frame, touch
 - **Needed from the device:** one Share log after opening an album, an artist, a playlist, Home, each Library category, Search and NaviMus's player.
+
+## Redesign R4a: the album page (`feat/redesign-album-page`)
+
+The first rebuilt page of the 1:1 redesign (`REDESIGN_PLAN.md`), laid over NaviMus's own album page when **Redesigned look** is on.
+
+- **What it changes for the user:**
+  - full-bleed album artwork dissolving into a page colour taken from the cover
+  - glass back and ⋯ circles in place of NaviMus's bar
+  - the title (Title 1 bold), the artist (tap: NaviMus opens the artist), and "genre · type · year"
+  - the action row: shuffle, the white **Play** capsule, and **download** (the user's choice in place of chroma.pw's "+")
+  - track rows (title; explicit badge plus artists; ⋯)
+  - pull down to stretch the cover
+- **How:** values from taurus `Redesigned/Album/AlbumHeader.x`, `AlbumRows.x` and `Kit/SGRHeaderInfo.m` / `SGRActionRow.m` (GPL-3.0): 20 pt sides, 148 pt Play, 16 pt spacing, 48 pt row, 46 % dissolve, 140 pt top scrim at 28 %, 44 pt glass circles 16 pt from the corners.
+  - **Interception:** `-[UINavigationController setViewControllers:animated:]` (SwiftUI's NavigationStack sets the whole stack; it doesn't push) and `pushViewController:animated:`. A page whose root view is `….AlbumViewWrapper` gets the rebuilt page as a child view controller over it. NaviMus's bar is faded out while it's on top and back after, so back and swipe-back pop NaviMus's page and its path stays in step. `viewDidLayoutSubviews` keeps the page above views SwiftUI adds later.
+  - **Data:** `getAlbum` and `getCoverArt` from the user's server with NaviMus's own login (`FZServer`). The server address and auth parameters come from NaviMus's requests: seen at `-resume` on the session task class, since Swift's async URLSession API skips `dataTaskWith…`, which the harness proved. Kept in memory only, never logged.
+  - **Play, track tap, artist tap:** NaviMus's `PlayAlbumIntent`, `PlaySongIntent` and `OpenArtistIntent`, the entity looked up by ID through its query (`FZNaviMus.swift`).
+  - **Shuffle, download, ⋯:** NaviMus's own controls on its page, activated through accessibility. The page and NaviMus's bar step aside for the instant of the call, because SwiftUI only activates reachable controls.
+- **Fail-safe:** no album ID → NaviMus's page stays; a failed load or action → a short message and a log line; each hook is type-checked by FZHook.
+- **Tested (harness, iPhone 17 Pro, iOS 26.5, `Harness/mockserver.py`):** the stand-in logs in with an async request (captured via `-resume`); opening an album covers the stand-in's `AlbumViewWrapper`; the page loads album, songs and cover from the mock server and colours itself from the cover; Play ran `PlayAlbumIntent(al-1)`, a track `PlaySongIntent(so-1)`, the artist `OpenArtistIntent(ar-1)`; download activated the page's own Download control; ⋯ opened the page's own menu; back popped the page and restored the bar.
+- **Not tested:**
+  - on device with NaviMus's real intents, controls and server
+  - NaviMus's real control labels: debug builds log them when the page opens
+  - the song tap plays that song through `PlaySongIntent`; whether NaviMus queues the rest of the album after it is NaviMus's own behaviour, to be checked on device

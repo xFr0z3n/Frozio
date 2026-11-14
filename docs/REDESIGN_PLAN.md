@@ -33,6 +33,20 @@ Approved by the user on 2026-11-14: Frozio **rebuilds NaviMus's screens** in the
 
 Tab order needs no work: NaviMus's own tab settings can already reorder tabs, and the user arranges them like chroma.pw.
 
+## Device findings (probe build 33, 2026-11-15)
+
+- **Pages** (Swift reflection of the type-erased `NavigationStackHostingController<AnyView>`): album `Arpeggi.AlbumViewWrapper` (`album: Arpeggi.Album`, `albumID: String?`); artist `Arpeggi.ArtistWrapper` (`artist`, `role`, `artistId`); playlist `Arpeggi.PlaylistDetailViewWrapper` (`playlist`); every Library category `Arpeggi.Screen` (`library: Screen.LibraryRoutes`).
+- **Intents:** `PlayAlbumIntent` (`album: AlbumEntity?`, `albumSearchTerm: String?`), `PlayArtistIntent`, `PlayPlaylistIntent`, `PlaySongIntent` (each an entity plus a name), `PlayGenreIntent` (`genre: String`), `OpenAlbumIntent` / `OpenArtistIntent` / `OpenPlaylistIntent` (`target`), `RandomMixIntent`, `ResumeMusicIntent`, `LikeSongIntent`. Entities have queries (`AlbumEntityQuery`, …) for looking them up by ID.
+- **Player:** not a presented screen. On iOS 17 NaviMus draws the mini player and the full player in one SwiftUI overlay of the tab root (`SwiftUI._UIInheritedView`, y 692–844 on a 390×844 screen, over the 83 pt `UITabBar`). So Frozio's mini player (R2) opens Frozio's player (R3); they ship together.
+- **Downloads:** NaviMus's `DownloadManager` exposes only its URLSession delegate. Frozio's download buttons trigger NaviMus's own download control through accessibility (labels logged by the album page probe), so NaviMus keeps doing the downloading.
+- **Rebuilt pages lie over NaviMus's pages.** NaviMus still pushes its page and Frozio covers it, so back and swipe-back pop NaviMus's page and its SwiftUI navigation path never goes out of step. Navigating elsewhere from a rebuilt page uses NaviMus's `Open…Intent`s.
+- **Server access** reuses the server address and token of NaviMus's own requests (captured in memory, never logged or stored), so Frozio never reads the keychain.
+
+## User requests on top of chroma.pw (2026-11-15)
+
+- **Download, not "+":** where chroma.pw has a "+" (add to library) next to Play, in the mini player and in the player, Frozio has a download button, as NaviMus's playlists do.
+- **Everything customizable.** Every button of the mini player (play/pause, previous, next, AirPlay, download, progress line) and of the full player (sleep timer, AirPlay, lyrics, queue, shuffle, repeat, download, ⋯ menu entries, …) can be shown or hidden in Frozio settings, and so can each part of each rebuilt page (Home shelves, speed dial, meta line, …).
+
 ## Risks, said up front
 
 - **Features of NaviMus's own screens** have to be carried over into each rebuilt screen (downloads, ratings, offline state, context actions), or that screen loses them. Each phase lists what it carries and what it doesn't.

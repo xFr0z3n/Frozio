@@ -19,6 +19,8 @@
 #import "Settings/FZSettingsEntry.h"
 #import "Redesign/FZRAppLook.h"
 #import "Diagnostics/FZScreenCensus.h"
+#import "Redesign/FZRNaviMusControls.h"
+#import "Redesign/Data/FZServer.h"
 
 #pragma mark - lyrics demo
 
@@ -111,6 +113,10 @@ static void startLyricsDemo(void) {
     // Same order as Frozio.m, minus the version gate and the hooks that need NaviMus itself.
     [FZSettings registerDefaults];
     FZRInstallAppLook();
+    if (FZRRedesignActive()) {
+        FZInstallServer();
+        FZRInstallPages();
+    }
     FZRegisterPages();
     FZInstallSettingsEntry();      // finds the stand-in's "Settings" stack exactly as it finds NaviMus's
     FZInstallLockScreenLyrics();   // a pass-through system hook, safe outside NaviMus
