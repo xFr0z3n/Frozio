@@ -6,7 +6,7 @@
 ARCHS = arm64
 TARGET = iphone:clang:latest:17.0
 INSTALL_TARGET_PROCESSES = Arpeggi
-PACKAGE_VERSION = 0.1.0
+PACKAGE_VERSION = 0.2.0
 
 include $(THEOS)/makefiles/common.mk
 
