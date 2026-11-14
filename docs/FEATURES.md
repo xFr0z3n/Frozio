@@ -15,7 +15,7 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
 - **Hooks:** none in NaviMus. One fix on a system class: the CloudKit guard, below.
 - **Version gate:** requires CFBundleShortVersionString `1.6.1`, CFBundleVersion `173`, and main-executable LC_UUID `EF406BF6-6FAE-3B23-BA21-963FFBF19DB8`. Otherwise Frozio does nothing.
 - **Signing:** done by the user's own signer. CI signing is optional and only runs when all 5 secrets are set.
-- **Status:** **builds** and **passes CI** (run 43548694887, artifact `Frozio-NaviMus-1.6.1-r6-debug-unsigned.ipa`, draft release "Frozio build 6"). **Not verified on device.**
+- **Status:** **builds** and **passes CI** (run 43548694887, artifact `Frozio-NaviMus-1.6.1-r6-debug-unsigned.ipa`, draft release "Frozio build 6"). **Verified on device by the user** (2026-11-14, iPhone14,5, iOS 17.5.1, external signer): it installs, launches, adds the Navidrome server, and behaves as stock.
 - **Device history:** build r3 crashed at launch on iOS 17.5.1 (`Library not loaded: @rpath/Frozio.dylib … unloadable mach-o file type 10`). CI had injected the dSYM's DWARF file (MH_DSYM) instead of the dylib. It's fixed in r5, and CI now asserts `MH_DYLIB` before and after injection.
 - **CI verified:**
   - `cryptid=0`
@@ -24,10 +24,9 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
   - `Frozio.dylib` is arm64-only and links no substrate, ElleKit or libhooker
   - the icon files are written, and `CFBundleIconName` is removed in favour of `CFBundleAlternateIcons.White`
 - **Not tested:**
-  - installing and launching on a device
-  - the version-gate log line at runtime
-  - the icon showing on the home screen
-  - how external signers handle the alternate icon and the entitlements (CarPlay, Siri, KVS)
+  - the version-gate log line in Console.app (not reported)
+  - switching to the white alternate icon (no picker yet)
+  - CarPlay, Siri and iCloud settings sync under the user's signer
 
 ### On-device checklist (user)
 
@@ -54,5 +53,5 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
 - **Verification:** at runtime, the class and both selectors must exist and the type encodings must match. Otherwise it logs and skips.
 - **Fail-safe:** the guard only installs after the version gate passes and the setting is on.
 - **Setting:** `fz.cloudKitGuard`, default **on**.
-- **Tested:** builds and passes CI (run 43548694887).
-- **Not tested:** on device; that SwiftData reads the description through these accessors and not the ivar; the iCloud settings sync (KVS, separate from CloudKit) under the user's profile.
+- **Tested:** builds, passes CI (run 43548694887), and is **verified on device by the user**: adding a server no longer crashes, and the app behaves as stock.
+- **Not tested:** the iCloud settings sync (KVS, separate from CloudKit) under the user's profile.
