@@ -11,7 +11,7 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
 
 ## Phase 1: no-op tweak + pipeline
 
-- **User-visible:** none, beyond the app's look on the home screen: the display name is **Frozio** (CI input `display_name`), and The cyan icon replaces Arpeggi's, and white is registered as an alternate (the picker arrives with the Frozio settings panel in Phase 2).
+- **User-visible:** only the home-screen look. The app is named **Frozio** (CI input `display_name`), and the cyan icon replaces Arpeggi's. White is registered as an alternate icon; its picker arrives with the Frozio settings panel in Phase 2.
 - **Hooks:** none.
 - **Version gate:** requires CFBundleShortVersionString `1.6.1`, CFBundleVersion `173`, and main-executable LC_UUID `EF406BF6-6FAE-3B23-BA21-963FFBF19DB8`. Otherwise Frozio does nothing.
 - **Signing:** done by the user's own signer. CI signing is optional and only runs when all 5 secrets are set.
