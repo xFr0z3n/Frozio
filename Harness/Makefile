@@ -38,7 +38,7 @@ all: $(APP)/FrozioHarness
 $(APP)/FrozioHarness: $(SOURCES) $(HEADERS) $(SWIFT) Info.plist Makefile
 	@mkdir -p $(APP)/Frozio.bundle $(OBJDIR)
 	cd $(OBJDIR) && xcrun --sdk iphonesimulator clang $(CFLAGS) -c $(abspath $(SOURCES))
-	$(SWIFTC) -target $(TARGET) -sdk $(SDK) -g -Onone -parse-as-library $(SWIFT) $(OBJDIR)/*.o $(FRAMEWORKS) -o $@
+	$(SWIFTC) -target $(TARGET) -sdk $(SDK) -g -Onone -parse-as-library -module-name FrozioHarness $(SWIFT) $(OBJDIR)/*.o $(FRAMEWORKS) -o $@
 	cp Info.plist $(APP)/Info.plist
 	cp "$(REPO)/layout/Library/Application Support/Frozio.bundle/"* $(APP)/Frozio.bundle/
 	codesign --force --sign - --timestamp=none $(APP)

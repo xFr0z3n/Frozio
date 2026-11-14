@@ -19,7 +19,7 @@ public final class FZProbe: NSObject {
     }
 
     /// The first non-system type inside a SwiftUI value, walking AnyView storage and modifiers.
-    private static func appValue(in value: Any, depth: Int = 0) -> Any? {
+    static func appValue(in value: Any, depth: Int = 0) -> Any? {
         let name = String(reflecting: type(of: value))
         if depth > 0, isAppType(name) { return value }
         guard depth < 24 else { return nil }

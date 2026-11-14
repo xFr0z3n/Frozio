@@ -10,6 +10,8 @@
 #import "Settings/Kit/FZPage.h"
 #import "Redesign/FZNaviMusTint.h"
 #import "Redesign/FZRAppLook.h"
+#import "Redesign/FZRNaviMusControls.h"
+#import "Redesign/Data/FZServer.h"
 #import "Lyrics/FZLockScreenLyrics.h"
 #import "ArtistBlock/FZArtistBlock.h"
 
@@ -24,6 +26,10 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZSyncNaviMusTint();
         // The redesigned look: before any window or bar exists.
         FZRInstallAppLook();
+        if (FZRRedesignActive()) {
+            FZInstallServer();     // NaviMus's server and login, from its own requests
+            FZRInstallPages();     // rebuilt pages laid over NaviMus's
+        }
         // Frozio settings: always available (it's how every other toggle is reached).
         FZRegisterPages();
         FZInstallSettingsEntry();
