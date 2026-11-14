@@ -50,9 +50,7 @@ static void FZApplyAppIcon(NSInteger index) {
                 if (error) {
                     FZLogError("app icon: setAlternateIconName(%@) failed: %@", name ?: @"<primary>", error);
                     FZShowAlert(@"Couldn't change the icon",
-                                [NSString stringWithFormat:@"%@
-
-%@ %ld", error.localizedDescription, error.domain, (long)error.code]);
+                                [NSString stringWithFormat:@"%@ (%@ %ld)", error.localizedDescription, error.domain, (long)error.code]);
                 } else {
                     FZSetInt(FZSettingsKeyAppIcon, index);
                     FZLog("app icon: now %@", name ?: @"cyan (primary)");
