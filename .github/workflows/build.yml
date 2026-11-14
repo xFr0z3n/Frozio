@@ -126,7 +126,9 @@ jobs:
           echo "app=$APP exe=$EXE version=$VER build=$BLD bundle=$BID"
           [ "$BID" = "$BUNDLE_ID" ] || { echo "::error::Unexpected bundle ID $BID"; exit 1; }
           [ "$VER" = "1.6.1" ] && [ "$BLD" = "173" ] || echo "::warning::NaviMus $VER ($BLD) is not the verified 1.6.1 (173); Frozio's version gate will keep it inert."
-          otool -l "$APP/$EXE" | grep -A2 LC_ENCRYPTION_INFO | grep cryptid
+          CRYPTID="$(otool -l "$APP/$EXE" | grep -A6 LC_ENCRYPTION_INFO | awk '/cryptid/{print $2; exit}')"
+          echo "cryptid=${CRYPTID:-none}"
+          [ "${CRYPTID:-0}" = "0" ] || { echo "::error::IPA is encrypted (cryptid=$CRYPTID); a decrypted IPA is required"; exit 1; }
           dwarfdump --uuid "$APP/$EXE"
           codesign -d --entitlements :- "$APP" > "$RUNNER_TEMP/orig-ent.plist" 2>/dev/null || true
           [ -s "$RUNNER_TEMP/orig-ent.plist" ] || echo '<?xml version="1.0"?><plist version="1.0"><dict/></plist>' > "$RUNNER_TEMP/orig-ent.plist"
