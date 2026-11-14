@@ -2,6 +2,8 @@
 
 The binary wins. Dumps live in `work/dumps/` (tool: `ipsw` 3.1.745, `work/tools/ipsw/ipsw.exe`). `strings.txt` was produced with a stdlib-Python printable-run extractor (min length 5), because `strings` isn't installed on this host.
 
+> **macOS (2026-11-14):** the dumps above were made on Windows. On the Mac use the native tools instead: `ipsw` 3.1.745 (same version, `/usr/local/bin/ipsw`), plus `otool`, `nm`, `strings` and `xcrun swift-demangle`. The dumps were not regenerated; re-run them with these tools if a claim needs fresh evidence.
+
 | # | Claim | README says | Binary shows | Evidence command |
 |---|---|---|---|---|
 | 1 | UI framework | "written completely in SwiftUI" (README.md:13) | SwiftUI-dominant (237 `View` conformances, `ArpeggiApp: SwiftUI.App`), but every large list is UIKit `UITableView` / `UICollectionView` wrapped in 15 `UIViewRepresentable`s, plus 2 `UIViewControllerRepresentable`s (`MailView`, `ActivityViewController`) and 2 `UIViewController` subclasses (`AirPLayViewController`, `StatusBarConfigurator.ViewController`) | `grep -E '^extension Arpeggi\.[^:]+: _\$s7SwiftUI(19UIViewRepresentable\|29UIViewControllerRepresentable)P' work/dumps/swift_dump_demangled.txt` |

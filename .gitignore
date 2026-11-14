@@ -6,3 +6,4 @@ work/
 .theos/
 packages/
 .DS_Store
+Harness/build/
