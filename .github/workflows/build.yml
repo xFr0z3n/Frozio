@@ -325,13 +325,34 @@ jobs:
           echo "OUT=$OUT" >> "$GITHUB_ENV"
           ls -la "$GITHUB_WORKSPACE/$OUT"
 
-      - name: Create DRAFT release (private to repo owner)
-        uses: softprops/action-gh-release@v2.5.0
-        with:
-          name: Frozio build ${{ github.run_number }}
-          tag_name: build-${{ github.run_number }}
-          files: ${{ env.OUT }}
-          draft: true
+      # One DRAFT release (private to the repo owner), as in FrozenMusic: every run replaces its IPA and
+      # renames it to the newest build, so the Releases page always shows just the latest one.
+      - name: Update the Frozio build release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          TAG=frozio-build
+          NAME="Frozio build ${{ github.run_number }}"
+          NOTES="$(printf '%s\n\n%s\n%s\n%s' \
+            "$OUT" \
+            "- Commit: ${{ github.sha }} (${{ github.ref_name }})" \
+            "- Kind: $( [ '${{ inputs.debug }}' = 'true' ] && echo debug || echo release ), $SIGNED" \
+            "- Run: ${{ github.server_url }}/$REPO/actions/runs/${{ github.run_id }}")"
+          ID="$(gh api "repos/$REPO/releases?per_page=100" \
+                --jq "[.[] | select(.draft and .tag_name == \"$TAG\")][0].id // empty")"
+          if [ -z "$ID" ]; then
+            gh release create "$TAG" "$OUT" --repo "$REPO" --draft --target "${{ github.sha }}" \
+              --title "$NAME" --notes "$NOTES"
+          else
+            for ASSET in $(gh api "repos/$REPO/releases/$ID/assets" --jq '.[].id'); do
+              gh api -X DELETE "repos/$REPO/releases/assets/$ASSET"
+            done
+            gh api -X PATCH "repos/$REPO/releases/$ID" -f name="$NAME" -f body="$NOTES" \
+              -f target_commitish="${{ github.sha }}" > /dev/null
+            gh release upload "$TAG" "$OUT" --repo "$REPO" --clobber
+          fi
+          echo "::notice::$NAME: https://github.com/$REPO/releases"
 
       - name: Remove keychain and profile
         if: always()
