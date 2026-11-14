@@ -9,6 +9,7 @@
 #import "Settings/FZSettingsEntry.h"
 #import "Settings/Kit/FZPage.h"
 #import "Redesign/FZNaviMusTint.h"
+#import "Lyrics/FZLockScreenLyrics.h"
 
 __attribute__((constructor)) static void FrozioInit(void) {
     @autoreleasepool {
@@ -26,5 +27,7 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZInstallScreenCensus(); // debug-only diagnostics for picking verified hook targets
 #endif
         // Feature modules install here, each checking FZSettings and its own preconditions.
+        // Lock screen lyrics: a pass-through hook that reads its switch live, so it installs either way.
+        FZInstallLockScreenLyrics();
     }
 }

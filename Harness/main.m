@@ -8,9 +8,76 @@
 // Launch argument -FZHarnessOpenSettings YES (the default for `make run`) opens Frozio settings
 // straight away, so a rebuild lands on the page being worked on.
 #import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
+#import <MediaPlayer/MediaPlayer.h>
 #import "Prefs/FZSettings.h"
 #import "Settings/FZSettingsPage.h"
 #import "Settings/Kit/FZPage.h"
+#import "Lyrics/FZLockScreenLyrics.h"
+
+#pragma mark - lyrics demo
+
+// -FZHarnessLyricsDemo YES stands in for NaviMus playing a song: a lyrics file where NaviMus saves them
+// (Application Support/Arpeggi/<db>/lyrics/, CachedLyrics JSON), silent audio so the lock screen shows
+// Now Playing, and Now Playing info set the way NaviMus sets it (song ID in ExternalContentIdentifier).
+// The lines are the harness's own text, timed every few seconds.
+static NSString *const kDemoSongID = @"harness-song";
+static AVAudioPlayer *sDemoPlayer;
+
+static void writeDemoLyrics(void) {
+    NSArray *texts = @[@"First line of the harness song", @"Second line comes in on time",
+                       @"A much longer third line that has to be split into pieces for the lock screen",
+                       @"", @"Back after a short break", @"Last line of the demo"];
+    NSMutableArray *lines = [NSMutableArray array];
+    NSInteger start = 1000;
+    for (NSString *text in texts) {
+        [lines addObject:@{@"start": @(start), @"value": text}];
+        start += text.length ? 4000 : 6000;
+    }
+    NSDictionary *file = @{@"songID": kDemoSongID, @"offset": @0, @"synced": @YES, @"source": @"navidrome",
+                           @"syncedLines": lines, @"formatVersion": @1};
+    NSURL *support = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
+    NSURL *folder = [support URLByAppendingPathComponent:@"Arpeggi/harness-db/lyrics" isDirectory:YES];
+    [NSFileManager.defaultManager createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil];
+    NSData *data = [NSJSONSerialization dataWithJSONObject:file options:0 error:nil];
+    [data writeToURL:[folder URLByAppendingPathComponent:@"demo.json"] atomically:YES];
+}
+
+// One second of 16-bit mono silence as a WAV, looped.
+static NSData *silentWAV(void) {
+    uint32_t rate = 8000, samples = rate, bytes = samples * 2;
+    NSMutableData *d = [NSMutableData data];
+    uint32_t u32; uint16_t u16;
+    [d appendBytes:"RIFF" length:4]; u32 = 36 + bytes; [d appendBytes:&u32 length:4];
+    [d appendBytes:"WAVEfmt " length:8]; u32 = 16; [d appendBytes:&u32 length:4];
+    u16 = 1; [d appendBytes:&u16 length:2]; [d appendBytes:&u16 length:2];   // PCM, mono
+    [d appendBytes:&rate length:4]; u32 = rate * 2; [d appendBytes:&u32 length:4];
+    u16 = 2; [d appendBytes:&u16 length:2]; u16 = 16; [d appendBytes:&u16 length:2];
+    [d appendBytes:"data" length:4]; [d appendBytes:&bytes length:4];
+    [d increaseLengthBy:bytes];
+    return d;
+}
+
+static void startLyricsDemo(void) {
+    writeDemoLyrics();
+    [AVAudioSession.sharedInstance setCategory:AVAudioSessionCategoryPlayback error:nil];
+    [AVAudioSession.sharedInstance setActive:YES error:nil];
+    sDemoPlayer = [[AVAudioPlayer alloc] initWithData:silentWAV() error:nil];
+    sDemoPlayer.numberOfLoops = -1;
+    [sDemoPlayer play];
+    MPRemoteCommandCenter *commands = MPRemoteCommandCenter.sharedCommandCenter;
+    [commands.playCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *e) { return MPRemoteCommandHandlerStatusSuccess; }];
+    [commands.pauseCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *e) { return MPRemoteCommandHandlerStatusSuccess; }];
+    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = @{
+        MPMediaItemPropertyTitle: @"Harness Song",
+        MPMediaItemPropertyArtist: @"Harness Artist",
+        MPMediaItemPropertyAlbumTitle: @"Frozio Harness",
+        MPMediaItemPropertyPlaybackDuration: @40,
+        MPNowPlayingInfoPropertyElapsedPlaybackTime: @0,
+        MPNowPlayingInfoPropertyPlaybackRate: @1,
+        MPNowPlayingInfoPropertyExternalContentIdentifier: kDemoSongID,
+    };
+}
 
 @interface FZHarnessSettingsStandIn : UIViewController
 @end
@@ -63,6 +130,8 @@
     // Same order as Frozio.m, minus the version gate and every NaviMus hook.
     [FZSettings registerDefaults];
     FZRegisterPages();
+    FZInstallLockScreenLyrics();   // a pass-through system hook, safe outside NaviMus
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessLyricsDemo"]) startLyricsDemo();
 
     UITabBarController *tabs = [UITabBarController new];
     UINavigationController *settings =

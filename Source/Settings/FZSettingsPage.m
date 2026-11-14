@@ -241,6 +241,13 @@ UIViewController *FZMakeSettingsPage(void) {
     inNaviMus.info = @"Frozio writes NaviMus's tint in its settings file before NaviMus starts, keeping a backup of "
                      @"the original. Picking a tint in NaviMus's own settings while this is on is overridden next launch.";
 
+    FZModRow *lockLyrics = FZOptionRow(@"Lock screen lyrics",
+                                       @"The line being sung in place of the artist on the lock screen, Control Center and CarPlay.",
+                                       FZSettingsKeyLockScreenLyrics);
+    lockLyrics.symbol = @"quote.bubble";
+    lockLyrics.info = @"Frozio uses the synced lyrics NaviMus has saved on this iPhone and fetches nothing itself. "
+                      @"A song shows its lines once NaviMus has loaded its lyrics, for example after opening the lyrics view once.";
+
     NSMutableArray *appearance = [NSMutableArray arrayWithObjects:accent, resetAccent, inNaviMus, nil];
 #ifdef FROZIO_ICON_PICKER
     // Hidden: setAlternateIconName fails with NSOSStatusErrorDomain -54 on the user's re-signed
@@ -251,6 +258,7 @@ UIViewController *FZMakeSettingsPage(void) {
 #endif
     NSMutableArray *sections = [NSMutableArray arrayWithArray:@[
         FZNotedSection(@"Appearance", appearance, @"Changes to NaviMus's tint apply after you restart the app."),
+        FZNotedSection(@"Lyrics", @[lockLyrics], @"Applies right away, from the next line."),
         FZNotedSection(@"Fixes", @[guard], FZRestartNote),
     ]];
 #ifdef FROZIO_DEBUG
