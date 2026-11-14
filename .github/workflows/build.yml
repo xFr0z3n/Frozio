@@ -8,6 +8,11 @@ on:
         required: false
         default: ""
         type: string
+      display_name:
+        description: "Home-screen name of the app"
+        required: true
+        default: "Frozio"
+        type: string
       ipa_asset:
         description: "Asset name in this repo's DRAFT release named 'ipa-source' (used when ipa_url is empty)"
         required: false
@@ -84,8 +89,12 @@ jobs:
         run: |
           DBG=0; [ "${{ inputs.debug }}" = "true" ] && DBG=1
           make clean all FINALPACKAGE=1 FROZIO_DEBUG=$DBG
-          DYLIB="$(find .theos/obj -name Frozio.dylib -type f | head -n1)"
+          # Exclude the dSYM: it contains a DWARF file also named Frozio.dylib (MH_DSYM, filetype 10),
+          # which dyld refuses ("unloadable mach-o file type 10"); build r3 shipped that by mistake.
+          DYLIB="$(find .theos/obj -name Frozio.dylib -type f -not -path '*.dSYM/*' | head -n1)"
           [ -f "$DYLIB" ] || { echo "::error::Frozio.dylib not built"; exit 1; }
+          echo "== otool -hv"; otool -hv "$DYLIB"
+          otool -hv "$DYLIB" | awk 'NR>3' | grep -qw DYLIB || { echo "::error::$DYLIB is not an MH_DYLIB"; exit 1; }
           cp "$DYLIB" "$RUNNER_TEMP/Frozio.dylib"
           echo "== otool -L Frozio.dylib"; otool -L "$RUNNER_TEMP/Frozio.dylib"
           echo "== lipo"; lipo -info "$RUNNER_TEMP/Frozio.dylib"
@@ -148,6 +157,19 @@ jobs:
         run: |
           python3 main/scripts/patch_icons.py --app "$APP" \
             --primary main/Resources/AppIcons/cyan --alternate main/Resources/AppIcons/white
+
+      - name: Set display name
+        env:
+          DISPLAY_NAME: ${{ inputs.display_name }}
+        run: |
+          # Only the home-screen label. CFBundleName/Identifier/Executable stay untouched
+          # (the version gate and NaviMus's own paths depend on them). Arpeggi ships no
+          # InfoPlist.strings that could override it.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$APP/Info.plist"
+          if find "$APP" -name InfoPlist.strings | grep -q .; then
+            echo "::warning::InfoPlist.strings present; a localized CFBundleDisplayName may override '$DISPLAY_NAME'"
+          fi
+          echo "CFBundleDisplayName=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Info.plist")"
 
       # Signing is OPTIONAL. Without the 5 secrets the IPA is left unsigned (like FrozenMusic)
       # and is meant to be signed by your own signer (Sideloadly, Feather, ESign, ...).
@@ -235,6 +257,8 @@ jobs:
           otool -L "$APP/$EXE" | grep -q '@rpath/Frozio.dylib' || { echo "::error::Frozio.dylib not in load commands"; exit 1; }
           otool -l "$APP/$EXE" | grep -A2 LC_RPATH | grep -q '@executable_path/Frameworks' || { echo "::error::LC_RPATH @executable_path/Frameworks missing"; exit 1; }
           test -f "$APP/Frameworks/Frozio.dylib" && lipo -info "$APP/Frameworks/Frozio.dylib"
+          echo "== otool -hv Frozio.dylib"; otool -hv "$APP/Frameworks/Frozio.dylib"
+          otool -hv "$APP/Frameworks/Frozio.dylib" | awk 'NR>3' | grep -qw DYLIB || { echo "::error::injected Frozio.dylib is not an MH_DYLIB"; exit 1; }
           echo "== otool -L Frozio.dylib"; otool -L "$APP/Frameworks/Frozio.dylib"
           echo "== icons"; plutil -p "$APP/Info.plist" | sed -n '/CFBundleIcons/,/^  }/p'
           ls -la "$APP"/AppIcon* "$APP"/FrozioWhite* "$APP/Frozio.bundle"
