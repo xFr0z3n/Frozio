@@ -1,5 +1,6 @@
 #import "FZSettingsPage.h"
 #import "Settings/FZAboutPage.h"
+#import "ArtistBlock/FZArtistBlock.h"
 #import "Settings/Kit/FZModPage.h"
 #import "Settings/Kit/FZPageStyle.h"
 #import "Settings/Kit/FZKitCore.h"
@@ -248,6 +249,14 @@ UIViewController *FZMakeSettingsPage(void) {
     lockLyrics.info = @"Frozio uses the synced lyrics NaviMus has saved on this iPhone and fetches nothing itself. "
                       @"A song shows its lines once NaviMus has loaded its lyrics, for example after opening the lyrics view once.";
 
+    FZModRow *blocked = FZPageRow(@"Blocked artists", ^UIViewController *{ return FZArtistBlockPage(); });
+    blocked.symbol = @"person.crop.circle.badge.xmark";
+    blocked.value = ^NSString *{
+        NSUInteger count = FZBlockedArtists().count;
+        if (!FZHidden(FZKeyArtistBlock)) return count ? @"Off" : @"None";
+        return count ? @(count).stringValue : @"None";
+    };
+
     NSMutableArray *appearance = [NSMutableArray arrayWithObjects:accent, resetAccent, inNaviMus, nil];
 #ifdef FROZIO_ICON_PICKER
     // Hidden: setAlternateIconName fails with NSOSStatusErrorDomain -54 on the user's re-signed
@@ -259,6 +268,7 @@ UIViewController *FZMakeSettingsPage(void) {
     NSMutableArray *sections = [NSMutableArray arrayWithArray:@[
         FZNotedSection(@"Appearance", appearance, @"Changes to NaviMus's tint apply after you restart the app."),
         FZNotedSection(@"Lyrics", @[lockLyrics], @"Applies right away, from the next line."),
+        FZSection(@"Playback", @[blocked]),
         FZNotedSection(@"Fixes", @[guard], FZRestartNote),
     ]];
 #ifdef FROZIO_DEBUG

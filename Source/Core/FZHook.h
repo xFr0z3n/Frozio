@@ -8,6 +8,10 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
+/// Whether a method type encoding matches `expectedNoDigits` once its frame-size digits are dropped
+/// (e.g. "v24@0:8B16" matches "v@:B"). The same check every hook makes.
+BOOL FZTypesMatchNoDigits(const char *encoding, const char *expectedNoDigits);
+
 /// Replaces the implementation of an instance method that `cls` itself declares or inherits.
 /// If the method is only inherited, a per-class override is added (so the superclass stays untouched)
 /// and `*original` then points at the superclass implementation.

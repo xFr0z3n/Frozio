@@ -2,7 +2,7 @@
 #import "FZLog.h"
 #import <string.h>
 
-static BOOL FZTypesMatch(const char *encoding, const char *expectedNoDigits) {
+BOOL FZTypesMatchNoDigits(const char *encoding, const char *expectedNoDigits) {
     if (!encoding || !expectedNoDigits) return NO;
     char buf[128]; size_t j = 0;
     for (size_t i = 0; encoding[i] && j < sizeof(buf) - 1; i++) {
@@ -23,7 +23,7 @@ BOOL FZHookInstanceMethod(Class cls, SEL sel, const char *types, IMP replacement
         return NO;
     }
     const char *enc = method_getTypeEncoding(m);
-    if (!FZTypesMatch(enc, types)) {
+    if (!FZTypesMatchNoDigits(enc, types)) {
         FZLogError("hook %s: -[%@ %@] has types %s, expected %s; skipped",
                    tag, NSStringFromClass(cls), NSStringFromSelector(sel), enc ?: "(null)", types);
         return NO;
