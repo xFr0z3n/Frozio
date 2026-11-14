@@ -1,8 +1,8 @@
 // FrozioHarness: a Simulator-only host app for Frozio's UI (settings pages, redesign kit).
 //
 // NaviMus is an arm64 device binary, so it can't run in the Simulator on this Mac. The harness
-// compiles Frozio's own sources for the Simulator and stands in for NaviMus's Settings tab: a
-// dark navigation stack titled "Settings", with the Frozio entry button top-right as on device.
+// compiles Frozio's own sources for the Simulator around a SwiftUI stand-in for NaviMus's screens
+// (NaviMusStandIn.swift), so the redesign and the Frozio entry button land on what SwiftUI really builds.
 // Frozio.m (the constructor and version gate) is not linked; only the system-class hooks that are safe
 // outside NaviMus (Now Playing, remote commands) are installed, as Frozio.m would.
 //
@@ -16,6 +16,8 @@
 #import "Settings/Kit/FZPage.h"
 #import "Lyrics/FZLockScreenLyrics.h"
 #import "ArtistBlock/FZArtistBlock.h"
+#import "Settings/FZSettingsEntry.h"
+#import "Redesign/FZRAppLook.h"
 
 #pragma mark - lyrics demo
 
@@ -99,73 +101,33 @@ static void startLyricsDemo(void) {
     play([NSUserDefaults.standardUserDefaults integerForKey:@"FZHarnessDemoStart"]);
 }
 
-@interface FZHarnessSettingsStandIn : UIViewController
-@end
-
-@implementation FZHarnessSettingsStandIn
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    self.title = @"Settings";
-    self.view.backgroundColor = UIColor.systemGroupedBackgroundColor;
-    self.navigationItem.rightBarButtonItem =
-        [[UIBarButtonItem alloc] initWithImage:FZLogoImage() ?: [UIImage systemImageNamed:@"snowflake"]
-                                         style:UIBarButtonItemStylePlain
-                                        target:self
-                                        action:@selector(openFrozio)];
-
-    UILabel *note = [UILabel new];
-    note.translatesAutoresizingMaskIntoConstraints = NO;
-    note.numberOfLines = 0;
-    note.textAlignment = NSTextAlignmentCenter;
-    note.textColor = UIColor.secondaryLabelColor;
-    note.text = @"Stand-in for NaviMus's Settings tab.\nTap the Frozio button top-right.";
-    [self.view addSubview:note];
-    [NSLayoutConstraint activateConstraints:@[
-        [note.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [note.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
-        [note.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor constant:-48],
-    ]];
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-    [super viewDidAppear:animated];
-    static BOOL opened;
-    if (!opened && [NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessOpenSettings"]) {
-        opened = YES;
-        [self openFrozio];
-    }
-}
-
-- (void)openFrozio {
-    FZPresentSettings(self);
-}
-@end
-
 @interface FZHarnessDelegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @end
 
 @implementation FZHarnessDelegate
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    // Same order as Frozio.m, minus the version gate and every NaviMus hook.
+    // Same order as Frozio.m, minus the version gate and the hooks that need NaviMus itself.
     [FZSettings registerDefaults];
+    FZRInstallAppLook();
     FZRegisterPages();
+    FZInstallSettingsEntry();      // finds the stand-in's "Settings" stack exactly as it finds NaviMus's
     FZInstallLockScreenLyrics();   // a pass-through system hook, safe outside NaviMus
     FZInstallArtistBlock();
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessLyricsDemo"]) startLyricsDemo();
 
-    UITabBarController *tabs = [UITabBarController new];
-    UINavigationController *settings =
-        [[UINavigationController alloc] initWithRootViewController:[FZHarnessSettingsStandIn new]];
-    settings.navigationBar.prefersLargeTitles = YES;
-    settings.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Settings"
-                                                        image:[UIImage systemImageNamed:@"gear"]
-                                                          tag:0];
-    tabs.viewControllers = @[settings];
-
+    // NaviMus's shape in SwiftUI (NaviMusStandIn.swift).
+    Class standIn = NSClassFromString(@"FZHarnessStandIn");
+    UIViewController *root = [standIn respondsToSelector:@selector(makeRoot)] ? [standIn performSelector:@selector(makeRoot)] : nil;
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    self.window.rootViewController = tabs;
+    self.window.rootViewController = root ?: [UIViewController new];
     [self.window makeKeyAndVisible];
+
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessOpenSettings"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            FZPresentSettings(self.window.rootViewController);
+        });
+    }
     return YES;
 }
 @end

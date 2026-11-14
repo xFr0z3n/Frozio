@@ -9,6 +9,7 @@
 #import "Settings/FZSettingsEntry.h"
 #import "Settings/Kit/FZPage.h"
 #import "Redesign/FZNaviMusTint.h"
+#import "Redesign/FZRAppLook.h"
 #import "Lyrics/FZLockScreenLyrics.h"
 #import "ArtistBlock/FZArtistBlock.h"
 
@@ -21,6 +22,8 @@ __attribute__((constructor)) static void FrozioInit(void) {
         if ([[FZSettings defaults] boolForKey:FZSettingsKeyCloudKitGuard]) FZInstallCloudKitGuard();
         // Before NaviMus reads its settings.json: apply (or undo) the accent as NaviMus's own tint.
         FZSyncNaviMusTint();
+        // The redesigned look: before any window or bar exists.
+        FZRInstallAppLook();
         // Frozio settings: always available (it's how every other toggle is reached).
         FZRegisterPages();
         FZInstallSettingsEntry();
