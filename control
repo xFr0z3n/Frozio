@@ -1,0 +1,8 @@
+Package: com.fr0z3n.frozio
+Name: Frozio
+Version: 0.1.0
+Architecture: iphoneos-arm
+Description: spoti.pw-style features and design for NaviMus (Arpeggi)
+Maintainer: xFr0z3n
+Author: xFr0z3n
+Section: Tweaks

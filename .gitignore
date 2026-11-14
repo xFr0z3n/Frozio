@@ -1,0 +1,8 @@
+certs/
+*.p12
+*.mobileprovision
+*.ipa
+work/
+.theos/
+packages/
+.DS_Store
