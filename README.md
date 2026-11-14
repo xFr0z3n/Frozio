@@ -50,6 +50,7 @@ scripts/setup_mac.sh
 
 - **Tweak:** `make FROZIO_DEBUG=1` builds `Frozio.dylib` exactly as CI does.
 - **Simulator UI:** `make -C Harness run` builds Frozio's sources into a small Simulator app (`Harness/`) and opens Frozio settings. NaviMus itself is an arm64 device binary and doesn't run in the Simulator, so the harness covers Frozio's own UI only. Hooks into NaviMus still need a device build.
+- `xcrun simctl launch booted com.frozio.harness -FZHarnessLyricsDemo YES` plays a silent demo song with saved lyrics, so lock screen lyrics can be followed in `make -C Harness log` (the Simulator draws no Now Playing panel).
 - `make -C Harness shot` saves a screenshot; `make -C Harness log` streams Frozio's log lines.
 - The iOS 26 `UISwitch` ignores very short synthesized taps in the Simulator; hold a tap for ~0.2 s when driving it from a script.
 

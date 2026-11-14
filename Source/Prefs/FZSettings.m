@@ -4,6 +4,7 @@ NSString *const FZSettingsSuiteName  = @"com.frozio.tweak";
 NSString *const FZSettingsKeyAppIcon = @"fz.appIcon";
 NSString *const FZSettingsKeyCloudKitGuard = @"fz.cloudKitGuard";
 NSString *const FZSettingsKeyAccentInNaviMus = @"fz.redesign.accent.navimus";
+NSString *const FZSettingsKeyLockScreenLyrics = @"fz.lockScreenLyrics";
 
 @implementation FZSettings
 
@@ -21,6 +22,7 @@ NSString *const FZSettingsKeyAccentInNaviMus = @"fz.redesign.accent.navimus";
         FZSettingsKeyAppIcon: @0,
         FZSettingsKeyCloudKitGuard: @YES,
         FZSettingsKeyAccentInNaviMus: @NO,
+        FZSettingsKeyLockScreenLyrics: @NO,
     }];
 }
 
