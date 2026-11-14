@@ -358,7 +358,7 @@ static UIColor *tintOf(CGImageRef image, UIColor *surface) {
                 CGImageRelease(blurred);
             }
             static dispatch_once_t once;
-            double ms = (CFAbsoluteTimeGetCurrent() - start) * 1000;
+            __unused double ms = (CFAbsoluteTimeGetCurrent() - start) * 1000; // read only by the debug log
             dispatch_once(&once, ^{ FZLogNS(@"redesign kit: first palette %@ from %zux%zu in %.1f ms", palette.fieldColor, CGImageGetWidth(cg), CGImageGetHeight(cg), ms); });
         }
         dispatch_async(dispatch_get_main_queue(), ^{ completion(palette); });
