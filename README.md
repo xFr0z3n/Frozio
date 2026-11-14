@@ -40,6 +40,18 @@ The IPA comes from one of two places (it is never committed):
 
 The signed IPA is attached to a **draft** release `Frozio build <n>`.
 
+## Developing on macOS
+
+Needs full Xcode (App Store), then the CI toolchain locally: Theos at CI's `THEOS_REF`, GNU make ≥ 4, `ldid`, `insert_dylib`, `ipsw`, `gh`. Check it and link Xcode's iPhoneOS SDK into Theos with:
+
+```bash
+scripts/setup_mac.sh
+```
+
+- **Tweak:** `make FROZIO_DEBUG=1` builds `Frozio.dylib` exactly as CI does.
+- **Simulator UI:** `make -C Harness run` builds Frozio's sources into a small Simulator app (`Harness/`) and opens Frozio settings. NaviMus itself is an arm64 device binary and doesn't run in the Simulator, so the harness covers Frozio's own UI only. Hooks into NaviMus still need a device build.
+- `make -C Harness shot` saves a screenshot; `make -C Harness log` streams Frozio's log lines.
+
 ## App icons
 
 Cyan is the default icon. White is an alternate icon you'll be able to pick in Frozio settings.

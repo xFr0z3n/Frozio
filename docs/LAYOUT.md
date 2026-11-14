@@ -16,3 +16,18 @@ FrozenMusic (`github.com/xFr0z3n/FrozenMusic`) is the structural template. This 
 | SDK from `theos/sdks` (16.5) | Xcode's iPhoneOS SDK linked into `$THEOS/sdks` | theos/sdks has nothing at or above 17.0 |
 | — | `scripts/` (`patch_icons.py`, `derive_entitlements.py`) | CI helpers |
 | — | `docs/` | Required by FROZIO_PROMPT §5 |
+| — | `scripts/setup_mac.sh` | Local macOS toolchain check; links Xcode's SDK into Theos like CI |
+| — | `Harness/` | Simulator host app for Frozio's UI. NaviMus is arm64-device-only, so it can't be run in the Simulator; not part of the tweak or CI |
+
+## Local build (macOS)
+
+The project moved from Windows to an x86_64 Mac on 2026-11-14. Homebrew no longer supports Intel Macs, so the CI toolchain is installed by hand:
+
+| Tool | Source | Where |
+|---|---|---|
+| Theos | `theos/theos` at CI's `THEOS_REF` (`344ee59`) | `~/theos` (`THEOS` in `~/.zprofile`) |
+| GNU make 4.4.1 | ftp.gnu.org source build | `/usr/local/bin/gmake`, `make` via `/usr/local/opt/make/libexec/gnubin` on `PATH` |
+| ldid v2.1.5-procursus7 | ProcursusTeam/ldid release | `/usr/local/bin/ldid` |
+| insert_dylib | Tyilo/insert_dylib at CI's `INSERT_DYLIB_REF` | `/usr/local/bin/insert_dylib` |
+| ipsw 3.1.745 | blacktop/ipsw macOS x86_64 release (SHA-256 checked) | `/usr/local/bin/ipsw` |
+| Xcode | App Store | `/Applications/Xcode.app` |
