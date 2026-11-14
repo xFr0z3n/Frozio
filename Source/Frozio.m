@@ -8,6 +8,7 @@
 #import "Diagnostics/FZScreenCensus.h"
 #import "Settings/FZSettingsEntry.h"
 #import "Settings/Kit/FZPage.h"
+#import "Redesign/FZNaviMusTint.h"
 
 __attribute__((constructor)) static void FrozioInit(void) {
     @autoreleasepool {
@@ -16,6 +17,8 @@ __attribute__((constructor)) static void FrozioInit(void) {
         [FZSettings registerDefaults];
         // Runs before NaviMus's main(): SwiftData builds its ModelContainer later, after login.
         if ([[FZSettings defaults] boolForKey:FZSettingsKeyCloudKitGuard]) FZInstallCloudKitGuard();
+        // Before NaviMus reads its settings.json: apply (or undo) the accent as NaviMus's own tint.
+        FZSyncNaviMusTint();
         // Frozio settings: always available (it's how every other toggle is reached).
         FZRegisterPages();
         FZInstallSettingsEntry();

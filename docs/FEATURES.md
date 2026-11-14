@@ -109,3 +109,21 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
 - **NaviMus's own tint:** that's `Settings.appTintColorPreset` in NaviMus's `settings.json`. It isn't written yet; Share log (debug) attaches `settings.json` so the exact format can be confirmed first.
 - **Hooks:** none added.
 - **Not tested:** on device.
+
+## Feature: accent in NaviMus (`Source/Redesign/FZNaviMusTint.m`)
+
+- **What it changes for the user:** with Frozio settings → Appearance → **Use accent in NaviMus** on (default **off**), NaviMus's own tint becomes the redesign accent (default #37F200). It takes effect on the next launch. Turning it off restores NaviMus's previous tint.
+- **Mechanism:** data layer, no hooks. Frozio's constructor runs before NaviMus's `main()` and edits `Application Support/Arpeggi/shared_data/settings.json`:
+  - `appTintColorPreset` = `{"type":"custom","color":{red,green,blue,opacity}}`
+  - `tintColorBasedOnAppearance` = false
+  - `dateLastPersisted` = now, so the local copy wins over the iCloud KVS copy
+  - The original values are backed up once to `settings.json.frozio-backup`.
+- **Verification (user's device, 2026-11-14):**
+  - the file path came from the Share log listing
+  - the preset and custom JSON forms came from two `settings.json` samples
+  - `settingsMigrationVersion.json` = 2
+- **Fail-safe:** nothing is written if the file is missing, the migration version isn't 2, the JSON isn't a dictionary, or the tint has an unknown shape. No backup means no change. Exceptions are caught.
+- **Not tested:**
+  - NaviMus loading the custom tint on device
+  - the iCloud KVS round trip
+  - the order of a tint change made in NaviMus while the switch is on (Frozio wins on the next launch, by design)

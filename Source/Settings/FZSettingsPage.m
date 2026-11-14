@@ -232,7 +232,14 @@ UIViewController *FZMakeSettingsPage(void) {
     FZModRow *resetAccent = FZActionRow(@"Reset accent", @"Back to the redesign green #37F200.", ^{ FZRResetAccent(); });
     resetAccent.symbol = @"arrow.counterclockwise";
 
-    NSMutableArray *appearance = [NSMutableArray arrayWithObjects:accent, resetAccent, nil];
+    FZModRow *inNaviMus = FZOptionRow(@"Use accent in NaviMus",
+                                      @"Sets NaviMus's own tint to the accent. Off puts NaviMus's tint back.",
+                                      FZSettingsKeyAccentInNaviMus);
+    inNaviMus.symbol = @"paintbrush";
+    inNaviMus.info = @"Frozio writes NaviMus's tint in its settings file before NaviMus starts, keeping a backup of "
+                     @"the original. Picking a tint in NaviMus's own settings while this is on is overridden next launch.";
+
+    NSMutableArray *appearance = [NSMutableArray arrayWithObjects:accent, resetAccent, inNaviMus, nil];
 #ifdef FROZIO_ICON_PICKER
     // Hidden: setAlternateIconName fails with NSOSStatusErrorDomain -54 on the user's re-signed
     // install, with loose PNGs and with catalog icons alike (docs/FEATURES.md, Known issues).
@@ -241,7 +248,7 @@ UIViewController *FZMakeSettingsPage(void) {
     (void)icon;
 #endif
     NSMutableArray *sections = [NSMutableArray arrayWithArray:@[
-        FZSection(@"Appearance", appearance),
+        FZNotedSection(@"Appearance", appearance, @"Changes to NaviMus's tint apply after you restart the app."),
         FZNotedSection(@"Fixes", @[guard], FZRestartNote),
     ]];
 #ifdef FROZIO_DEBUG

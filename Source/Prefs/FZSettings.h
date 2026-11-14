@@ -5,6 +5,7 @@
 
 extern NSString *const FZSettingsSuiteName;     // "com.frozio.tweak"
 extern NSString *const FZSettingsKeyAppIcon;    // "fz.appIcon": 0 = cyan (primary), 1 = white (alternate "White")
+extern NSString *const FZSettingsKeyAccentInNaviMus; // "fz.redesign.accent.navimus": NO = NaviMus keeps its own tint
 extern NSString *const FZSettingsKeyCloudKitGuard; // "fz.cloudKitGuard": YES = SwiftData stays local-only (stock behaviour)
 
 @interface FZSettings : NSObject
