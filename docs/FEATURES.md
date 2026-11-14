@@ -80,3 +80,18 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
   - Everything on device.
   - Whether SwiftUI later resets the injected bar button. The button is re-added on every appearance.
   - The icon switch under the user's signer.
+
+### App icon: asset-catalog icons (build 14+)
+
+- **Device finding:** `setAlternateIconName` with loose-PNG alternates failed with `NSOSStatusErrorDomain -54` (build 12, iOS 17.5.1, user's signer).
+- **Fix:** `scripts/rebuild_assets.sh` runs in CI on macOS:
+  - It confirms the catalog is NaviMus 1.6.1's (only `AccentColor` and `arpeggiLogo` besides the icon, per `assetutil --info`).
+  - It extracts `arpeggiLogo` through CoreUI (`scripts/carextract.m`) and re-creates `AccentColor` with sRGB (0.996, 1, 1, 1).
+  - It adds `AppIcon` (cyan) and `AppIcon-White` with `actool --alternate-app-icon --include-all-app-icons`.
+  - It verifies the new catalog and merges actool's `CFBundleIcons` into Info.plist.
+  - If any step fails, CI falls back to the loose-PNG patch and warns.
+- **Side effect:** NaviMus's iOS 26 layered icon (`AppIcon.iconstack`) is replaced by Frozio's flat icons, as intended.
+- **CI-verified:** run 43554106642 shows `icon mode: catalog`, and the new catalog holds `AccentColor`, `AppIcon`, `AppIcon-White` and `arpeggiLogo`.
+- **Not tested:**
+  - the icon switch on device
+  - that NaviMus's accent colour and logo render as before
