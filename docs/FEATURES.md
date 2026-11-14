@@ -55,3 +55,28 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
 - **Setting:** `fz.cloudKitGuard`, default **on**.
 - **Tested:** builds, passes CI (run 43548694887), and is **verified on device by the user**: adding a server no longer crashes, and the app behaves as stock.
 - **Not tested:** the iCloud settings sync (KVS, separate from CloudKit) under the user's profile.
+
+## Feature: Frozio settings panel + app icon picker (`feat/frozio-settings`)
+
+- **What it changes for the user:**
+  - A Frozio logo button sits at the top-right of NaviMus's **Settings** tab. It opens the Frozio settings sheet, in spoti.pw's redesign settings style (black page, grey cards, accent #37F200).
+  - **App icon:** Cyan (default) or White, via `setAlternateIconName:`.
+  - **Keep library on this iPhone:** the CloudKit guard switch, on by default.
+  - **Frozio on GitHub:** a link to the repo.
+- **Hooks:** `-[UIViewController viewDidAppear:]` (UIKit, `v@:B`), shared with the debug census. The button is added only when all four parts of the census-verified identity hold:
+  - the class name is `_TtGC7SwiftUI32NavigationStackHostingControllerVS_7AnyView_`
+  - it's the root of a `SwiftUI.UIKitNavigationController`
+  - that controller sits under `SwiftUI.UIKitTabBarController`
+  - the nav title is `Settings`
+- **No NaviMus Swift symbols are hooked.**
+- **Verification:** `frozio.log` from build 7 (census lines 99, 142, 150).
+- **Fail-safe:**
+  - Any mismatch leaves the screen untouched.
+  - Exceptions are caught and logged.
+  - Frozio's pages are presented in their own navigation controller and never pushed onto SwiftUI's stacks.
+- **Code reuse:** the settings kit is adapted from taurus (GPL-3.0); see `LICENSES.md`.
+- **Tested:** debug and release builds pass CI (runs 43552106493, 43552234088).
+- **Not tested:**
+  - Everything on device.
+  - Whether SwiftUI later resets the injected bar button. The button is re-added on every appearance.
+  - The icon switch under the user's signer.
