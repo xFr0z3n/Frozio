@@ -57,10 +57,10 @@ BOOL FZVersionGatePassed(void) {
             }
         }
         if (passed) {
-            FZLog("version gate PASS: %{public}@ (%{public}@) uuid %{public}@ bundle %{public}@",
+            FZLog("version gate PASS: %@ (%@) uuid %@ bundle %@",
                   sv, bv, uuid, NSBundle.mainBundle.bundleIdentifier);
         } else {
-            FZLogError("version gate FAIL: %{public}@ (%{public}@) uuid %{public}@ bundle %{public}@ -- installing no hooks",
+            FZLogError("version gate FAIL: %@ (%@) uuid %@ bundle %@ -- installing no hooks",
                        sv ?: @"?", bv ?: @"?", uuid ?: @"?", NSBundle.mainBundle.bundleIdentifier);
         }
     });

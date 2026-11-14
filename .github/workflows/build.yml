@@ -164,6 +164,17 @@ jobs:
           python3 main/scripts/patch_icons.py --app "$APP" \
             --primary main/Resources/AppIcons/cyan --alternate main/Resources/AppIcons/white
 
+      - name: Expose Documents in the Files app (debug builds only)
+        if: ${{ inputs.debug }}
+        run: |
+          # The user has no Mac/Console.app: debug logs go to Documents/Frozio/frozio.log and are
+          # read from Files > On My iPhone > Frozio. Release builds keep NaviMus's Info.plist as is.
+          /usr/libexec/PlistBuddy -c "Add :UIFileSharingEnabled bool true" "$APP/Info.plist" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Set :UIFileSharingEnabled true" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :LSSupportsOpeningDocumentsInPlace bool true" "$APP/Info.plist" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Set :LSSupportsOpeningDocumentsInPlace true" "$APP/Info.plist"
+          plutil -p "$APP/Info.plist" | grep -E 'UIFileSharingEnabled|LSSupportsOpeningDocumentsInPlace'
+
       - name: Set display name
         env:
           DISPLAY_NAME: ${{ inputs.display_name }}

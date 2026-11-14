@@ -1,18 +1,22 @@
-// Frozio entry point. Phase 1: no hooks. The constructor only evaluates the version
-// gate; feature modules (Phase 2+) install themselves only when it passes.
+// Frozio entry point. The constructor evaluates the version gate; every module installs itself
+// only when the gate passes, and each checks its own setting and preconditions.
 #import <Foundation/Foundation.h>
-#import "FZLog.h"
-#import "FZVersionGate.h"
+#import "Core/FZLog.h"
+#import "Core/FZVersionGate.h"
 #import "Prefs/FZSettings.h"
 #import "Fixes/FZCloudKitGuard.h"
+#import "Diagnostics/FZScreenCensus.h"
 
 __attribute__((constructor)) static void FrozioInit(void) {
     @autoreleasepool {
-        FZLog("loaded v%{public}s", FROZIO_VERSION);
+        FZLog("loaded v%s", FROZIO_VERSION);
         if (!FZVersionGatePassed()) return; // unknown NaviMus build: stay completely inert
         [FZSettings registerDefaults];
         // Runs before NaviMus's main(): SwiftData builds its ModelContainer later, after login.
         if ([[FZSettings defaults] boolForKey:FZSettingsKeyCloudKitGuard]) FZInstallCloudKitGuard();
-        // Phase 2+: feature modules install here, each checking FZSettings and its own preconditions.
+#ifdef FROZIO_DEBUG
+        FZInstallScreenCensus(); // debug-only diagnostics for picking verified hook targets
+#endif
+        // Feature modules install here, each checking FZSettings and its own preconditions.
     }
 }
