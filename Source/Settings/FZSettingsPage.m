@@ -18,27 +18,84 @@ UIImage *FZLogoImage(void) {
 #pragma mark - app icon
 
 static NSString *const kAltIconWhite = @"White"; // CFBundleAlternateIcons key written by scripts/patch_icons.py
+static NSNotificationName const FZAppIconDidChange = @"FZAppIconDidChange";
+
+// What iOS shows right now is the source of truth (not a stored preference).
+static NSString *FZShownIcon(void) {
+    return [UIApplication.sharedApplication.alternateIconName isEqualToString:kAltIconWhite] ? @"White" : @"Cyan";
+}
+
+static void FZShowAlert(NSString *title, NSString *message) {
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [FZTopController() presentViewController:a animated:YES completion:nil];
+}
 
 static void FZApplyAppIcon(NSInteger index) {
     UIApplication *app = UIApplication.sharedApplication;
+    NSString *name = index == 1 ? kAltIconWhite : nil;
+    FZLog("app icon: requested %@ (supports=%d, current=%@)", name ?: @"<primary>", app.supportsAlternateIcons, app.alternateIconName ?: @"<primary>");
     if (!app.supportsAlternateIcons) {
-        FZLogError("app icon: alternate icons not supported (CFBundleAlternateIcons missing?)");
+        FZShowAlert(@"Icons unavailable",
+                    @"This build has no alternate icons registered (CFBundleAlternateIcons). Your signer may have rewritten Info.plist.");
         return;
     }
-    NSString *name = index == 1 ? kAltIconWhite : nil;
     NSString *current = app.alternateIconName;
     if ((current == nil && name == nil) || [current isEqualToString:name]) return;
-    [app setAlternateIconName:name completionHandler:^(NSError *error) {
-        if (error) FZLogError("app icon: setAlternateIconName(%@) failed: %@", name ?: @"<primary>", error);
-        else FZLog("app icon: now %@", name ?: @"cyan (primary)");
-    }];
+    // iOS rejects icon changes while a presentation is still animating; the menu that picked the
+    // icon is dismissing right now, so wait for it to finish.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.7 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [app setAlternateIconName:name completionHandler:^(NSError *error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (error) {
+                    FZLogError("app icon: setAlternateIconName(%@) failed: %@", name ?: @"<primary>", error);
+                    FZShowAlert(@"Couldn't change the icon",
+                                [NSString stringWithFormat:@"%@
+
+%@ %ld", error.localizedDescription, error.domain, (long)error.code]);
+                } else {
+                    FZSetInt(FZSettingsKeyAppIcon, index);
+                    FZLog("app icon: now %@", name ?: @"cyan (primary)");
+                }
+                [NSNotificationCenter.defaultCenter postNotificationName:FZAppIconDidChange object:nil];
+            });
+        }];
+    });
 }
 
-// The stored choice follows what iOS actually shows (the user may have changed it elsewhere).
-static void FZSyncStoredIcon(void) {
-    NSInteger shown = [UIApplication.sharedApplication.alternateIconName isEqualToString:kAltIconWhite] ? 1 : 0;
-    if (FZInt(FZSettingsKeyAppIcon, 0) != shown) FZSetInt(FZSettingsKeyAppIcon, shown);
+#pragma mark - diagnostics (debug builds)
+
+#ifdef FROZIO_DEBUG
+static void FZShareLog(void) {
+    NSString *path = FZLogFilePath();
+    if (!path || ![NSFileManager.defaultManager fileExistsAtPath:path]) {
+        FZShowAlert(@"No log yet", path ?: @"Documents is unavailable.");
+        return;
+    }
+    NSMutableArray *items = [NSMutableArray arrayWithObject:[NSURL fileURLWithPath:path]];
+    NSString *old = [path stringByAppendingString:@".1"];
+    if ([NSFileManager.defaultManager fileExistsAtPath:old]) [items addObject:[NSURL fileURLWithPath:old]];
+    UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
+    UIViewController *host = FZTopController();
+    share.popoverPresentationController.sourceView = host.view;
+    share.popoverPresentationController.sourceRect = (CGRect){CGPointMake(CGRectGetMidX(host.view.bounds), CGRectGetMidY(host.view.bounds)), CGSizeZero};
+    [host presentViewController:share animated:YES completion:nil];
 }
+
+static void FZClearLog(void) {
+    NSString *path = FZLogFilePath();
+    if (!path) return;
+    [NSFileManager.defaultManager removeItemAtPath:path error:nil];
+    [NSFileManager.defaultManager removeItemAtPath:[path stringByAppendingString:@".1"] error:nil];
+    FZLog("log cleared by user");
+    FZShowAlert(@"Log cleared", @"New lines start now.");
+}
+
+static NSString *FZLogSize(void) {
+    NSDictionary *attrs = [NSFileManager.defaultManager attributesOfItemAtPath:FZLogFilePath() error:nil];
+    return attrs ? [NSByteCountFormatter stringFromByteCount:(long long)attrs.fileSize countStyle:NSByteCountFormatterCountStyleFile] : @"empty";
+}
+#endif
 
 #pragma mark - page
 
@@ -55,7 +112,6 @@ static void FZSyncStoredIcon(void) {
 }
 
 - (void)viewWillAppear:(BOOL)animated {
-    FZSyncStoredIcon();
     [super viewWillAppear:animated];
     [self.tableView reloadData];
 }
@@ -80,7 +136,12 @@ static void FZSyncStoredIcon(void) {
     name.textColor = UIColor.whiteColor;
 
     UILabel *version = [UILabel new];
-    version.text = [NSString stringWithFormat:@"v%s for NaviMus %@", FROZIO_VERSION,
+#ifdef FROZIO_DEBUG
+    NSString *kind = @"debug";
+#else
+    NSString *kind = @"release";
+#endif
+    version.text = [NSString stringWithFormat:@"v%s %@ · NaviMus %@", FROZIO_VERSION, kind,
                     NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"] ?: @"?"];
     version.font = [UIFont systemFontOfSize:13 weight:UIFontWeightRegular];
     version.textColor = [UIColor colorWithWhite:1 alpha:0.65];
@@ -104,11 +165,11 @@ static void FZSyncStoredIcon(void) {
 @end
 
 UIViewController *FZMakeSettingsPage(void) {
-    FZModRow *icon = FZChoiceRow(@"App icon", @"The icon on your Home Screen.", FZSettingsKeyAppIcon, @[@"Cyan", @"White"], 0);
+    FZModRow *icon = FZMenuRow(@"App icon", @[@"Cyan", @"White"], ^NSString *{ return FZShownIcon(); },
+                               ^(NSInteger index) { FZApplyAppIcon(index); });
+    icon.subtitle = @"Cyan is Frozio's icon, White a monochrome one. iOS confirms a change with a short alert.";
     icon.symbol = @"app.badge";
-    icon.choiceNotes = @[@"Frozio's default icon.", @"A monochrome white icon."];
-    icon.choiceFooter = @"iOS confirms an icon change with a short alert.";
-    icon.chosen = ^(NSInteger index) { FZApplyAppIcon(index); };
+    icon.refreshOn = FZAppIconDidChange;
 
     FZModRow *guard = FZSwitchRow(@"Keep library on this iPhone",
                                   @"Stops iCloud sync of NaviMus's library cache, as in the App Store build. "
@@ -121,11 +182,19 @@ UIViewController *FZMakeSettingsPage(void) {
     FZModRow *repo = FZLinkRow(@"Frozio on GitHub", @"Source, builds and issues.", FZRepoURL);
     repo.symbol = @"chevron.left.forwardslash.chevron.right";
 
-    NSArray *sections = @[
+    NSMutableArray *sections = [NSMutableArray arrayWithArray:@[
         FZSection(@"Appearance", @[icon]),
         FZNotedSection(@"Fixes", @[guard], FZRestartNote),
-        FZSection(@"About", @[repo]),
-    ];
+    ]];
+#ifdef FROZIO_DEBUG
+    FZModRow *share = FZStatActionRow(@"Share log", @"Send frozio.log with AirDrop, Mail, Messages or Save to Files.",
+                                      ^NSString *{ return FZLogSize(); }, ^{ FZShareLog(); });
+    share.symbol = @"square.and.arrow.up";
+    FZModRow *clear = FZActionRow(@"Clear log", @"Start a fresh log before reproducing a problem.", ^{ FZClearLog(); });
+    clear.symbol = @"trash";
+    [sections addObject:FZNotedSection(@"Diagnostics", @[share, clear], @"Debug build: Frozio writes everything it does to this log.")];
+#endif
+    [sections addObject:FZSection(@"About", @[repo])];
     return [[FZSettingsRootPage alloc] initWithTitle:@"Frozio" intro:nil sections:sections footer:nil];
 }
 
