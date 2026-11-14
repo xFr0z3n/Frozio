@@ -105,7 +105,7 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
 ## Feature: redesign kit + accent colour (`feat/frozio-settings`)
 
 - **Kit:** `Source/Redesign/Kit/` holds tokens (`FZRTokens`), artwork palette (`FZRPalette`), glass (`FZGlass`, `FZRGlass`) and accent (`FZRAccent`). Adapted from taurus (GPL-3.0), see `LICENSES.md`. It's the shared theming layer every redesign feature uses.
-- **User-visible:** Frozio settings → Appearance → **Accent colour** (system colour picker) and **Reset accent**, default #37F200. It applies to Frozio's own screens now.
+- **User-visible:** Frozio settings → Appearance → **Accent colour** (system colour picker) and **Reset accent**, default #37F200. It applies to Frozio's own screens now. **Verified on device by the user** (build 23 log: picks #FFFFFF, #32C759, reset to #37F200).
 - **NaviMus's own tint:** that's `Settings.appTintColorPreset` in NaviMus's `settings.json`. It isn't written yet; Share log (debug) attaches `settings.json` so the exact format can be confirmed first.
 - **Hooks:** none added.
 - **Not tested:** on device.
@@ -123,7 +123,7 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
   - the preset and custom JSON forms came from two `settings.json` samples
   - `settingsMigrationVersion.json` = 2
 - **Fail-safe:** nothing is written if the file is missing, the migration version isn't 2, the JSON isn't a dictionary, or the tint has an unknown shape. No backup means no change. Exceptions are caught.
+- **Verified on device by the user (build 26, 2026-11-14):** on → NaviMus uses the accent after a restart; off → NaviMus's own tint comes back.
 - **Not tested:**
-  - NaviMus loading the custom tint on device
   - the iCloud KVS round trip
   - the order of a tint change made in NaviMus while the switch is on (Frozio wins on the next launch, by design)
