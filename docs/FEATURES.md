@@ -212,3 +212,17 @@ The plan for the full 1:1 redesign is in `REDESIGN_PLAN.md`. Step R0a: debug bui
 
 - **Tested (harness):** a seeded store under the harness's `Arpeggi/harness-db/database/` logs its 2 tables with columns and counts.
 - **Needed from the device:** one Share log from a debug build, to learn NaviMus's real SwiftData schema.
+
+## Redesign R0b/R0c: probe build (`feat/redesign-probe`)
+
+Findings so far, and a debug probe for what only the device can show.
+
+- **Library store (from the user's Share log, build 32):** `Application Support/Arpeggi/<database id>/database/db.sqlite`, 35 tables. Main entities: `ZALBUMMODEL` (175 rows; year, genre, play count, created, played, starred, cover art …), `ZARTISTMODEL` (238), `ZSONGMODEL` (109), `ZPLAYLISTMODEL` (1), plus the downloaded and link tables. **It's a partial cache.** Songs are stored only for albums NaviMus has opened (109 songs vs 822 in the user's library), so rebuilt pages also need the server. NaviMus's server config is in `shared_data/serverConfigurations.json` and `currentConfiguration.json`, and its password in the keychain. Frozio, running inside NaviMus, can call the same OpenSubsonic API.
+- **`arpeggi://` has no deep-link routes.** The scheme check in the binary (`0x100208958`) is `arpeggi-cache`, NaviMus's audio caching loader; the `URLComponents.host` parser (`0x1008b1fc8`) validates server addresses. "Play this album" therefore has to go through NaviMus's App Intents.
+- **Every NaviMus page is `NavigationStackHostingController<AnyView>`** (device census), so the class can't identify an album page. **FZProbe** (`Source/Probe/FZProbe.swift`, the tweak's first Swift file) reflects the SwiftUI root view inside the `AnyView` with `Mirror`: type metadata names survive the stripping. Harness check: a pushed album page reports `…AlbumDetail` with field `album: …Album`.
+- **Debug probe logs (census):**
+  - each page's root view type and its field names and types (never values)
+  - NaviMus's App Intent and entity types with their fields (`_typeByName` + `Mirror`; creating an intent instance doesn't run it)
+  - the views in the bottom 220 pt of the tab bar controller (mini player, tab bar)
+  - the navigation bar's views (bar buttons): class, frame, touch
+- **Needed from the device:** one Share log after opening an album, an artist, a playlist, Home, each Library category, Search and NaviMus's player.

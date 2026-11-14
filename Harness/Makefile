@@ -18,6 +18,7 @@ VERSION := $(shell sed -n 's/^PACKAGE_VERSION = //p' $(REPO)/Makefile)
 # Every Frozio source except Frozio.m: no constructor, no version gate, no NaviMus hooks.
 SOURCES := main.m $(filter-out $(REPO)/Source/Frozio.m,$(shell find $(REPO)/Source -name '*.m'))
 HEADERS := $(shell find $(REPO)/Source -name '*.h')
+SWIFT   := NaviMusStandIn.swift $(shell find $(REPO)/Source -name '*.swift')
 
 OBJDIR  := $(BUILD)/obj
 # swiftc by path: on this Mac `xcrun -f swiftc` dies in xcodebuild (bus error) while the toolchain is fine.
@@ -27,17 +28,17 @@ TARGET  := $(ARCH)-apple-ios17.0-simulator
 CFLAGS := -target $(ARCH)-apple-ios17.0-simulator -isysroot $(SDK) -fobjc-arc -fmodules -g -O0 \
           -Wall -Werror -I$(REPO)/Source -DFROZIO_VERSION=\"$(VERSION)\" -DFROZIO_DEBUG=1 -DFROZIO_HARNESS=1
 FRAMEWORKS := -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
-              -framework CoreText -framework CoreImage -framework UniformTypeIdentifiers -framework MediaPlayer -framework AVFoundation -framework SwiftUI -lsqlite3
+              -framework CoreText -framework CoreImage -framework UniformTypeIdentifiers -framework MediaPlayer -framework AVFoundation -framework SwiftUI -framework AppIntents -lsqlite3
 
 .PHONY: all run shot log clean
 
 all: $(APP)/FrozioHarness
 
 # Frozio's Objective-C is compiled to objects, then linked by swiftc with the SwiftUI stand-in.
-$(APP)/FrozioHarness: $(SOURCES) $(HEADERS) NaviMusStandIn.swift Info.plist Makefile
+$(APP)/FrozioHarness: $(SOURCES) $(HEADERS) $(SWIFT) Info.plist Makefile
 	@mkdir -p $(APP)/Frozio.bundle $(OBJDIR)
 	cd $(OBJDIR) && xcrun --sdk iphonesimulator clang $(CFLAGS) -c $(abspath $(SOURCES))
-	$(SWIFTC) -target $(TARGET) -sdk $(SDK) -g -Onone -parse-as-library NaviMusStandIn.swift $(OBJDIR)/*.o $(FRAMEWORKS) -o $@
+	$(SWIFTC) -target $(TARGET) -sdk $(SDK) -g -Onone -parse-as-library $(SWIFT) $(OBJDIR)/*.o $(FRAMEWORKS) -o $@
 	cp Info.plist $(APP)/Info.plist
 	cp "$(REPO)/layout/Library/Application Support/Frozio.bundle/"* $(APP)/Frozio.bundle/
 	codesign --force --sign - --timestamp=none $(APP)
