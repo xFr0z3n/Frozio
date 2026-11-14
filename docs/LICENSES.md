@@ -38,6 +38,8 @@ Every borrowed file or block carries a header comment `// Adapted from <repo>/<p
 | `Source/Redesign/Kit/FZRPalette.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRPalette.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
 | `Source/Redesign/Kit/FZRGlass.h` | `taurus/tweak/Sources/Redesigned/Kit/SGRGlass.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
 | `Source/Redesign/Kit/FZRGlass.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRGlass.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Settings/FZAboutPage.h` | `taurus/tweak/Sources/App/About/About.h` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/FZAboutPage.m` | `taurus/tweak/Sources/App/About/AboutSettings.m`, `Backup.m`, `Licenses.m` @ fe3211c (renamed SG→FZ, Spotify-only parts removed, Frozio settings suite) | GPL-3.0 |
 | `Source/Redesign/Kit/FZRAccent.m` | storage and picker from `taurus/tweak/Sources/Redesigned/Kit/SGRAccent.x` @ fe3211c (colour-swap hooks not ported) | GPL-3.0 |
 
 ## Build-time tools (not shipped)

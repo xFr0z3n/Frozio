@@ -127,3 +127,23 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
 - **Not tested:**
   - the iCloud KVS round trip
   - the order of a tint change made in NaviMus while the switch is on (Frozio wins on the next launch, by design)
+
+## Feature: About page — licenses, settings backup, reset all (`feat/settings-basics`)
+
+Matrix rows `about-links`, `backup`, `reset-all`. Adapted from taurus `App/About/AboutSettings.m`, `Backup.m`, `Licenses.m` (GPL-3.0, see `LICENSES.md`); spoti.pw's current code is not copied.
+
+- **What it changes for the user:** Frozio settings → About → **About** opens a page with:
+  - **Version** and **NaviMus** (the host's `CFBundleShortVersionString`)
+  - **Frozio on GitHub** (moved here from the root page) and **Licenses** (Frozio GPL-3.0, taurus GPL-3.0)
+  - **Export settings**: writes `frozio-settings.json` (`{frozio, navimus, settings}`) and opens the share sheet
+  - **Import settings**: picks a JSON file, confirms, replaces Frozio's settings with the file's, then closes NaviMus
+  - **Reset all settings** (red): confirms, removes every Frozio setting so each is back at its default, then closes NaviMus
+- **Scope:** only Frozio's own suite (`com.frozio.tweak`, keys `fz.*`). `fz.appIcon` is left out of backups and reset because it mirrors what iOS shows. NaviMus's own settings, servers and downloads are never touched. A setting that's off after a reset or an import undoes itself on the next launch as it always does (e.g. "Use accent in NaviMus" off restores NaviMus's tint).
+- **Differences from spoti.pw:** no Website or Discord rows, because Frozio has neither yet. No "stock mode" on reset (Frozio has none; defaults are the stock state). "Close" instead of "restart": iOS can't relaunch an app, so Frozio exits like taurus does and the user opens NaviMus again.
+- **Import fail-safe:** a file that isn't a JSON object with a `settings` dictionary is refused. Each key must be an `fz.` setting, a plist-valid value, and the same type as the stored one (if any); others are skipped and counted in the log.
+- **Hooks:** none.
+- **Fix found while testing:** an alert presented while the document picker is still dismissing came up half drawn (title only, no buttons). The import confirmation now waits for the picker's dismissal to finish.
+- **Tested (Simulator harness, iPhone 17 Pro, iOS 26.5):** export writes `{"fz.redesign.accent.navimus": true}` with versions; Save to Files; reset empties the suite and closes the app; import of that file restores the key (`import: set 1 keys, skipped 0`) and closes the app; Licenses page renders. Release and debug Theos builds pass.
+- **Not tested:**
+  - on device, inside NaviMus (the About row lives in Frozio's own sheet, so behaviour should match the harness)
+  - importing a file from another Frozio version with different keys

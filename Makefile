@@ -13,7 +13,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = Frozio
 $(TWEAK_NAME)_FILES = $(shell find Source \( -name '*.m' -o -name '*.x' -o -name '*.xm' \))
 $(TWEAK_NAME)_CFLAGS = -fobjc-arc -Wall -Werror -ISource -DFROZIO_VERSION=\"$(PACKAGE_VERSION)\"
-$(TWEAK_NAME)_FRAMEWORKS = Foundation UIKit QuartzCore CoreGraphics CoreText CoreImage
+$(TWEAK_NAME)_FRAMEWORKS = Foundation UIKit QuartzCore CoreGraphics CoreText CoreImage UniformTypeIdentifiers
 # No Logos hooks and no hooking runtime in Phase 1. The internal generator keeps any
 # future %hook off CydiaSubstrate until a runtime is chosen; CI also fails if
 # `otool -L` shows a substrate/ellekit dependency.
