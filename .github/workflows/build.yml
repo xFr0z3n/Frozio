@@ -96,9 +96,15 @@ jobs:
           echo "== otool -hv"; otool -hv "$DYLIB"
           otool -hv "$DYLIB" | awk 'NR>3' | grep -qw DYLIB || { echo "::error::$DYLIB is not an MH_DYLIB"; exit 1; }
           cp "$DYLIB" "$RUNNER_TEMP/Frozio.dylib"
+          # Theos sets the jailbreak install name (/Library/MobileSubstrate/DynamicLibraries/...);
+          # a sideloaded dylib should identify as @rpath/Frozio.dylib. Re-sign ad hoc after the edit.
+          install_name_tool -id "@rpath/Frozio.dylib" "$RUNNER_TEMP/Frozio.dylib"
+          ldid -S "$RUNNER_TEMP/Frozio.dylib"
+          echo "== otool -D (install name)"; otool -D "$RUNNER_TEMP/Frozio.dylib"
           echo "== otool -L Frozio.dylib"; otool -L "$RUNNER_TEMP/Frozio.dylib"
           echo "== lipo"; lipo -info "$RUNNER_TEMP/Frozio.dylib"
-          if otool -L "$RUNNER_TEMP/Frozio.dylib" | grep -qiE 'substrate|ellekit|libhooker'; then
+          # Line 1 = file path, line 2 = the dylib's own LC_ID_DYLIB; dependencies start at line 3.
+          if otool -L "$RUNNER_TEMP/Frozio.dylib" | tail -n +3 | grep -qiE 'substrate|ellekit|libhooker'; then
             echo "::error::Frozio.dylib links a hooking runtime; Phase 1 must not."
             exit 1
           fi
