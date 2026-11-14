@@ -4,6 +4,7 @@
 #ifdef FROZIO_DEBUG
 #import <UIKit/UIKit.h>
 #import "Core/FZHook.h"
+#import <objc/message.h>
 
 static IMP fz_origViewDidAppear;
 
@@ -46,6 +47,44 @@ static void FZLogTabBar(UIViewController *root) {
           (unsigned long)tbc.selectedIndex);
 }
 
+// FZProbe.swift, called by name so this file needs no generated Swift header.
+static NSString *FZProbeCall(NSString *selector, UIViewController *vc) {
+    Class probe = NSClassFromString(@"FZProbe");
+    SEL sel = NSSelectorFromString(selector);
+    if (![probe respondsToSelector:sel]) return nil;
+    return ((NSString *(*)(id, SEL, id))objc_msgSend)(probe, sel, vc);
+}
+
+// Views overlapping the bottom of the tab bar controller (tab bar, mini player) and the views of a
+// navigation bar (bar buttons): class, frame and depth, for placing the redesign's own bar and buttons.
+static void FZDumpViews(UIView *view, UIView *root, NSUInteger depth, CGFloat minY, NSMutableString *out, NSUInteger *lines) {
+    if (!view || depth > 9 || *lines > 120) return;
+    CGRect frame = [view convertRect:view.bounds toView:root];
+    if (CGRectGetMaxY(frame) >= minY && !view.hidden && view.alpha > 0.01) {
+        [out appendFormat:@"\n%@%@ %@%@", [@"" stringByPaddingToLength:depth * 2 withString:@" " startingAtIndex:0], FZShort(view),
+                          NSStringFromCGRect(frame), view.userInteractionEnabled ? @"" : @" (no touch)"];
+        (*lines)++;
+    }
+    for (UIView *sub in view.subviews) FZDumpViews(sub, root, depth + 1, minY, out, lines);
+}
+
+static void FZLogLayout(UITabBarController *tbc) {
+    UIView *root = tbc.view;
+    NSMutableString *bottom = [NSMutableString string];
+    NSUInteger lines = 0;
+    FZDumpViews(root, root, 0, CGRectGetHeight(root.bounds) - 220, bottom, &lines);
+    FZLog("probe: bottom 220 pt of the tab bar controller:%@", bottom);
+    UINavigationController *nav = [tbc.selectedViewController isKindOfClass:UINavigationController.class]
+        ? (UINavigationController *)tbc.selectedViewController
+        : tbc.selectedViewController.childViewControllers.firstObject.navigationController;
+    if (nav) {
+        NSMutableString *bar = [NSMutableString string];
+        lines = 0;
+        FZDumpViews(nav.navigationBar, nav.navigationBar, 0, -1000, bar, &lines);
+        FZLog("probe: navigation bar of %@:%@", FZShort(nav), bar);
+    }
+}
+
 static void fz_viewDidAppear(UIViewController *self, SEL _cmd, BOOL animated) {
     ((void (*)(id, SEL, BOOL))fz_origViewDidAppear)(self, _cmd, animated);
     @try {
@@ -60,6 +99,22 @@ static void fz_viewDidAppear(UIViewController *self, SEL _cmd, BOOL animated) {
         if ([self isKindOfClass:UITabBarController.class]) {
             static dispatch_once_t tabOnce;
             dispatch_once(&tabOnce, ^{ FZLogTabBar(self); });
+            // Once the mini player has had time to appear.
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                FZLogLayout((UITabBarController *)self);
+            });
+            static dispatch_once_t intentsOnce;
+            dispatch_once(&intentsOnce, ^{
+                Class probe = NSClassFromString(@"FZProbe");
+                if ([probe respondsToSelector:NSSelectorFromString(@"intentSummary")]) {
+                    FZLog("probe: intents\n%@", ((NSString *(*)(id, SEL))objc_msgSend)(probe, NSSelectorFromString(@"intentSummary")));
+                }
+            });
+        }
+        NSString *rootType = FZProbeCall(@"rootViewType:", self);
+        if (rootType) {
+            FZLog("probe: page %@ title=%@ depth=%lu root=%@ fields [%@]", FZShort(self), self.navigationItem.title ?: @"-",
+                  (unsigned long)self.navigationController.viewControllers.count, rootType, FZProbeCall(@"rootViewFields:", self) ?: @"");
         }
         UINavigationController *nav = self.navigationController;
         FZLog("census: appear %@ | super %@ | title=%@ nav=%@ depth=%lu parent=%@ presenting=%@",

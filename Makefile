@@ -11,7 +11,7 @@ PACKAGE_VERSION = 0.3.0
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = Frozio
-$(TWEAK_NAME)_FILES = $(shell find Source \( -name '*.m' -o -name '*.x' -o -name '*.xm' \))
+$(TWEAK_NAME)_FILES = $(shell find Source \( -name '*.m' -o -name '*.x' -o -name '*.xm' -o -name '*.swift' \))
 $(TWEAK_NAME)_CFLAGS = -fobjc-arc -Wall -Werror -ISource -DFROZIO_VERSION=\"$(PACKAGE_VERSION)\"
 $(TWEAK_NAME)_LIBRARIES = sqlite3
 $(TWEAK_NAME)_FRAMEWORKS = Foundation UIKit QuartzCore CoreGraphics CoreText CoreImage UniformTypeIdentifiers MediaPlayer

@@ -18,6 +18,7 @@
 #import "ArtistBlock/FZArtistBlock.h"
 #import "Settings/FZSettingsEntry.h"
 #import "Redesign/FZRAppLook.h"
+#import "Diagnostics/FZScreenCensus.h"
 
 #pragma mark - lyrics demo
 
@@ -114,6 +115,7 @@ static void startLyricsDemo(void) {
     FZInstallSettingsEntry();      // finds the stand-in's "Settings" stack exactly as it finds NaviMus's
     FZInstallLockScreenLyrics();   // a pass-through system hook, safe outside NaviMus
     FZInstallArtistBlock();
+    FZInstallScreenCensus();       // debug census + Swift probe, as in a debug device build
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessLyricsDemo"]) startLyricsDemo();
 
     // NaviMus's shape in SwiftUI (NaviMusStandIn.swift).
