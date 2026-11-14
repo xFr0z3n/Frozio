@@ -38,7 +38,7 @@ The IPA comes from one of two places (it is never committed):
 - **Either** `ipa_url`, a direct download URL,
 - **or** an asset uploaded to a **draft** release named `ipa-source` in this repo (drafts are visible only to you).
 
-The signed IPA is attached to a **draft** release `Frozio build <n>`.
+There is one **draft** release, `Frozio build <n>` (tag `frozio-build`). Every run replaces its IPA and renames it to the newest build, so the Releases page only ever shows the latest one.
 
 ## Developing on macOS
 

@@ -182,7 +182,6 @@ Matrix row `artist-block`. Adapted from taurus `Shared/ArtistBlock/` (GPL-3.0, s
 - **Hooks:** `-[MPRemoteCommand addTargetWithHandler:]` (`@@:@?`) and `-[MPNowPlayingInfoCenter setNowPlayingInfo:]` (`v@:@`), public MediaPlayer API via `FZHook`. Installed after lock screen lyrics, so it sees NaviMus's own info (lyrics re-sends go straight to the original setter). No NaviMus symbols.
 - **Tested (Simulator harness, iPhone 17 Pro, iOS 26.5):** the harness demo has a four-song queue and registers a next-track handler as NaviMus does. With "Blocked Band" blocked (typed lowercase, stored as typed with auto-capitalisation): "Second Song" by "Blocked Band feat. Guest Singer" was skipped to "Third Song" by "Guest Singer & Harness Artist", which stayed (main artist not blocked). With Main or featured and "Harness Artist" also blocked, every song was blocked: 25 skips, then `25 blocked songs in a row; not skipping any more`. The page, Block by name, Block from what's playing (already-blocked names greyed out) and the root row render. Release and debug Theos builds pass.
 - **Found while testing:** the first version created the event with `-[MPRemoteCommandEvent init]`, which killed the app; replaced by the factory above.
+- **Verified on device by the user (build 28, 2026-11-14, iOS 17.5.1):** a blocked artist's song is skipped by NaviMus's own handler, so the event factory exists and NaviMus accepts its event on iOS 17 too.
 - **Not tested:**
-  - on device with NaviMus's real handler and queue (whether NaviMus's handler accepts the event and moves its own queue)
-  - the factory on iOS 17 (checked only in the iOS 26.5 Simulator; on a mismatch nothing is skipped)
   - NaviMus's credit format for multi-artist songs
