@@ -1,0 +1,56 @@
+name: Inspect NaviMus asset catalog
+
+# Diagnostic only: prints what NaviMus's Assets.car contains, so scripts/rebuild_assets can
+# reproduce it exactly when adding Frozio's icons. Uses the same private 'ipa-source' draft asset.
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_asset:
+        description: "Asset name in the draft release 'ipa-source'"
+        required: false
+        default: "com.reillywilkinson.NaviMus-1.6.1-eeveedecrypter.ipa"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          path: main
+      - name: Fetch and unpack IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IPA_ASSET: ${{ inputs.ipa_asset }}
+        run: |
+          API="$(gh api "repos/${{ github.repository }}/releases" \
+            --jq ".[] | select(.name==\"ipa-source\") | .assets[] | select(.name==\"$IPA_ASSET\") | .url" | head -n1)"
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" "$API" -o in.ipa
+          unzip -q in.ipa -d ipa
+          echo "APP=$(ls -d "$PWD"/ipa/Payload/*.app | head -n1)" >> "$GITHUB_ENV"
+      - name: assetutil --info
+        run: |
+          xcrun --sdk iphoneos assetutil --info "$APP/Assets.car" > info.json
+          python3 - <<'EOF'
+          import json
+          d = json.load(open("info.json"))
+          print("header:", json.dumps(d[0], indent=1)[:1500])
+          for r in d[1:]:
+              keep = {k: r[k] for k in r if k in ("AssetType","Name","RenditionName","Idiom","Scale","Appearance",
+                     "PixelWidth","PixelHeight","Color components","Colorspace","Encoding","Template Mode",
+                     "SizeOnDisk","Compression","State","Value","Graphics","Subtype","Dimension1","Glyph Size")}
+              print(json.dumps(keep))
+          EOF
+      - name: Xcode and actool versions
+        run: |
+          xcodebuild -version
+          xcrun actool --version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Upload info.json
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: assets-info
+          path: info.json
