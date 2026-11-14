@@ -27,7 +27,7 @@ TARGET  := $(ARCH)-apple-ios17.0-simulator
 CFLAGS := -target $(ARCH)-apple-ios17.0-simulator -isysroot $(SDK) -fobjc-arc -fmodules -g -O0 \
           -Wall -Werror -I$(REPO)/Source -DFROZIO_VERSION=\"$(VERSION)\" -DFROZIO_DEBUG=1 -DFROZIO_HARNESS=1
 FRAMEWORKS := -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
-              -framework CoreText -framework CoreImage -framework UniformTypeIdentifiers -framework MediaPlayer -framework AVFoundation -framework SwiftUI
+              -framework CoreText -framework CoreImage -framework UniformTypeIdentifiers -framework MediaPlayer -framework AVFoundation -framework SwiftUI -lsqlite3
 
 .PHONY: all run shot log clean
 

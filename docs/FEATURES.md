@@ -205,3 +205,10 @@ Matrix rows `redesign-ui`, `redesign-amoled`, `redesign-tabbar` (partial). Strat
 - **Not tested:**
   - on device (iOS 17.5.1): the real material bars, and NaviMus's own screens (player, mini player, sheets)
   - an iOS 17 Simulator: the runtime couldn't be installed from the command line here (`xcodebuild -downloadPlatform` dies with a bus error on this Mac)
+
+## Redesign R0a: library store schema in Share log (`feat/redesign-plan-r0a`)
+
+The plan for the full 1:1 redesign is in `REDESIGN_PLAN.md`. Step R0a: debug builds' **Share log** now first writes the layout of NaviMus's library store to `frozio.log`. That's every SQLite file under `Application Support/Arpeggi/` (except lyrics, covers and songs): its tables, their columns with declared types, and row counts. No row content is read. Files are opened `SQLITE_OPEN_READONLY`. Links `libsqlite3`.
+
+- **Tested (harness):** a seeded store under the harness's `Arpeggi/harness-db/database/` logs its 2 tables with columns and counts.
+- **Needed from the device:** one Share log from a debug build, to learn NaviMus's real SwiftData schema.

@@ -7,6 +7,7 @@
 #import "Prefs/FZSettings.h"
 #import "Redesign/Kit/FZRAccent.h"
 #import "Redesign/FZRAppLook.h"
+#import "Diagnostics/FZLibrarySchema.h"
 
 UIImage *FZLogoImage(void) {
     static UIImage *logo;
@@ -99,6 +100,8 @@ static void FZOfferRestart(NSString *what) {
 
 #ifdef FROZIO_DEBUG
 static void FZShareLog(void) {
+    // The library store's layout (names and counts only) for the rebuilt redesign screens.
+    FZLogLibrarySchema();
     NSString *path = FZLogFilePath();
     if (!path || ![NSFileManager.defaultManager fileExistsAtPath:path]) {
         FZShowAlert(@"No log yet", path ?: @"Documents is unavailable.");
