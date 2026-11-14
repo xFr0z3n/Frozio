@@ -4,7 +4,7 @@
 #import <Foundation/Foundation.h>
 
 extern NSString *const FZSettingsSuiteName;     // "com.frozio.tweak"
-extern NSString *const FZSettingsKeyAppIcon;    // "fz.appIcon": "cyan" (primary) | "white" (alternate)
+extern NSString *const FZSettingsKeyAppIcon;    // "fz.appIcon": 0 = cyan (primary), 1 = white (alternate "White")
 extern NSString *const FZSettingsKeyCloudKitGuard; // "fz.cloudKitGuard": YES = SwiftData stays local-only (stock behaviour)
 
 @interface FZSettings : NSObject

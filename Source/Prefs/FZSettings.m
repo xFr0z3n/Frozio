@@ -17,7 +17,7 @@ NSString *const FZSettingsKeyCloudKitGuard = @"fz.cloudKitGuard";
 
 + (void)registerDefaults {
     [[self defaults] registerDefaults:@{
-        FZSettingsKeyAppIcon: @"cyan",
+        FZSettingsKeyAppIcon: @0,
         FZSettingsKeyCloudKitGuard: @YES,
     }];
 }

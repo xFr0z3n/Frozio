@@ -6,6 +6,8 @@
 #import "Prefs/FZSettings.h"
 #import "Fixes/FZCloudKitGuard.h"
 #import "Diagnostics/FZScreenCensus.h"
+#import "Settings/FZSettingsEntry.h"
+#import "Settings/Kit/FZPage.h"
 
 __attribute__((constructor)) static void FrozioInit(void) {
     @autoreleasepool {
@@ -14,6 +16,9 @@ __attribute__((constructor)) static void FrozioInit(void) {
         [FZSettings registerDefaults];
         // Runs before NaviMus's main(): SwiftData builds its ModelContainer later, after login.
         if ([[FZSettings defaults] boolForKey:FZSettingsKeyCloudKitGuard]) FZInstallCloudKitGuard();
+        // Frozio settings: always available (it's how every other toggle is reached).
+        FZRegisterPages();
+        FZInstallSettingsEntry();
 #ifdef FROZIO_DEBUG
         FZInstallScreenCensus(); // debug-only diagnostics for picking verified hook targets
 #endif
