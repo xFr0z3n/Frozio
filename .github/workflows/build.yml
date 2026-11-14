@@ -339,18 +339,24 @@ jobs:
             "- Commit: ${{ github.sha }} (${{ github.ref_name }})" \
             "- Kind: $( [ '${{ inputs.debug }}' = 'true' ] && echo debug || echo release ), $SIGNED" \
             "- Run: ${{ github.server_url }}/$REPO/actions/runs/${{ github.run_id }}")"
-          ID="$(gh api "repos/$REPO/releases?per_page=100" \
-                --jq "[.[] | select(.draft and .tag_name == \"$TAG\")][0].id // empty")"
+          # The draft tagged $TAG; or one a previous run left "untagged-…" (GitHub drops a draft's tag when
+          # an edit leaves tag_name out).
+          ID="$(gh api "repos/$REPO/releases?per_page=100" --jq "
+                ([.[] | select(.draft and .tag_name == \"$TAG\")][0].id) //
+                ([.[] | select(.draft and (.name | startswith(\"Frozio build \")) and (.tag_name | startswith(\"untagged-\")))][0].id) //
+                empty")"
           if [ -z "$ID" ]; then
             gh release create "$TAG" "$OUT" --repo "$REPO" --draft --target "${{ github.sha }}" \
               --title "$NAME" --notes "$NOTES"
           else
-            for ASSET in $(gh api "repos/$REPO/releases/$ID/assets" --jq '.[].id'); do
-              gh api -X DELETE "repos/$REPO/releases/assets/$ASSET"
-            done
-            gh api -X PATCH "repos/$REPO/releases/$ID" -f name="$NAME" -f body="$NOTES" \
+            OLD="$(gh api "repos/$REPO/releases/$ID/assets" --jq '.[].id')"
+            # Upload by ID first (drafts can't be found by tag), then drop the previous IPA, so a failed
+            # upload never leaves the release empty.
+            gh api -X POST "https://uploads.github.com/repos/$REPO/releases/$ID/assets?name=$OUT" \
+              -H "Content-Type: application/octet-stream" --input "$OUT" > /dev/null
+            for ASSET in $OLD; do gh api -X DELETE "repos/$REPO/releases/assets/$ASSET"; done
+            gh api -X PATCH "repos/$REPO/releases/$ID" -f tag_name="$TAG" -f name="$NAME" -f body="$NOTES" \
               -f target_commitish="${{ github.sha }}" > /dev/null
-            gh release upload "$TAG" "$OUT" --repo "$REPO" --clobber
           fi
           echo "::notice::$NAME: https://github.com/$REPO/releases"
 
