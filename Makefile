@@ -6,14 +6,14 @@
 ARCHS = arm64
 TARGET = iphone:clang:latest:17.0
 INSTALL_TARGET_PROCESSES = Arpeggi
-PACKAGE_VERSION = 0.2.0
+PACKAGE_VERSION = 0.3.0
 
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = Frozio
 $(TWEAK_NAME)_FILES = $(shell find Source \( -name '*.m' -o -name '*.x' -o -name '*.xm' \))
 $(TWEAK_NAME)_CFLAGS = -fobjc-arc -Wall -Werror -ISource -DFROZIO_VERSION=\"$(PACKAGE_VERSION)\"
-$(TWEAK_NAME)_FRAMEWORKS = Foundation UIKit
+$(TWEAK_NAME)_FRAMEWORKS = Foundation UIKit QuartzCore CoreGraphics CoreText CoreImage
 # No Logos hooks and no hooking runtime in Phase 1. The internal generator keeps any
 # future %hook off CydiaSubstrate until a runtime is chosen; CI also fails if
 # `otool -L` shows a substrate/ellekit dependency.

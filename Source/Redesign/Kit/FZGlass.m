@@ -1,0 +1,78 @@
+// Adapted from taurus/tweak/Sources/Core/SGGlass.m @ fe3211c (GPL-3.0, github.com/xFr0z3n/taurus).
+#import "Redesign/Kit/FZGlass.h"
+#import <objc/runtime.h>
+
+UIVisualEffect *FZGlassEffect(void) {
+    Class glass = NSClassFromString(@"UIGlassEffect");
+    if ([glass respondsToSelector:@selector(effectWithStyle:)]) return [glass effectWithStyle:0];
+    return [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterialDark];
+}
+
+static UIVisualEffectView *newPane(void) {
+    UIVisualEffectView *glass = [[UIVisualEffectView alloc] initWithEffect:FZGlassEffect()];
+    glass.userInteractionEnabled = NO;
+    glass.layer.zPosition = -1;
+    return glass;
+}
+
+UIVisualEffectView *FZGlassFor(UIView *host, const void *key) {
+    UIVisualEffectView *glass = objc_getAssociatedObject(host, key);
+    if (!glass) {
+        glass = newPane();
+        objc_setAssociatedObject(host, key, glass, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (glass.superview != host) [host insertSubview:glass atIndex:0];
+    return glass;
+}
+
+static char kPanesKey;
+
+UIVisualEffectView *FZGlassAt(UIView *host, NSUInteger index) {
+    NSMutableArray<UIVisualEffectView *> *panes = objc_getAssociatedObject(host, &kPanesKey);
+    if (!panes) {
+        panes = [NSMutableArray array];
+        objc_setAssociatedObject(host, &kPanesKey, panes, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    while (panes.count <= index) [panes addObject:newPane()];
+    UIVisualEffectView *glass = panes[index];
+    glass.hidden = NO;
+    if (glass.superview != host) [host insertSubview:glass atIndex:0];
+    return glass;
+}
+
+void FZHideGlassFrom(UIView *host, NSUInteger count) {
+    NSArray<UIVisualEffectView *> *panes = objc_getAssociatedObject(host, &kPanesKey);
+    for (NSUInteger i = count; i < panes.count; i++) panes[i].hidden = YES;
+}
+
+// Frozio: iOS 26 SDK API (UICornerConfiguration / UICornerRadius), declared here because CI builds
+// with an older SDK. Every call below is guarded by NSClassFromString / respondsToSelector:.
+@interface NSObject (FZiOS26Corners)
++ (id)capsuleConfiguration;
++ (id)configurationWithUniformRadius:(id)radius;
++ (id)fixedRadius:(CGFloat)radius;
+@end
+@interface UIView (FZiOS26Corners)
+- (void)setCornerConfiguration:(id)configuration;
+@end
+
+void FZShapeGlass(UIView *glass, CGFloat radius, BOOL capsule) {
+    Class config = NSClassFromString(@"UICornerConfiguration");
+    Class cornerRadius = NSClassFromString(@"UICornerRadius");
+    id shape = nil;
+    if (config && [glass respondsToSelector:@selector(setCornerConfiguration:)]) {
+        if (capsule && [config respondsToSelector:@selector(capsuleConfiguration)]) {
+            shape = [config capsuleConfiguration];
+        } else if ([config respondsToSelector:@selector(configurationWithUniformRadius:)] && [cornerRadius respondsToSelector:@selector(fixedRadius:)]) {
+            shape = [config configurationWithUniformRadius:[cornerRadius fixedRadius:radius]];
+        }
+    }
+    if (shape) {
+        [glass setCornerConfiguration:shape];
+        glass.clipsToBounds = NO;
+    } else {
+        glass.layer.cornerRadius = capsule ? glass.bounds.size.height / 2 : radius;
+        glass.layer.cornerCurve = kCACornerCurveContinuous;
+        glass.clipsToBounds = YES;
+    }
+}

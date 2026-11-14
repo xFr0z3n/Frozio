@@ -3,6 +3,7 @@
 NSString *const FZSettingsSuiteName  = @"com.frozio.tweak";
 NSString *const FZSettingsKeyAppIcon = @"fz.appIcon";
 NSString *const FZSettingsKeyCloudKitGuard = @"fz.cloudKitGuard";
+NSString *const FZSettingsKeyAccentInNaviMus = @"fz.redesign.accent.navimus";
 
 @implementation FZSettings
 
@@ -17,8 +18,9 @@ NSString *const FZSettingsKeyCloudKitGuard = @"fz.cloudKitGuard";
 
 + (void)registerDefaults {
     [[self defaults] registerDefaults:@{
-        FZSettingsKeyAppIcon: @"cyan",
+        FZSettingsKeyAppIcon: @0,
         FZSettingsKeyCloudKitGuard: @YES,
+        FZSettingsKeyAccentInNaviMus: @NO,
     }];
 }
 

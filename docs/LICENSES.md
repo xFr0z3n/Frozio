@@ -20,6 +20,25 @@ Every borrowed file or block carries a header comment `// Adapted from <repo>/<p
 | Frozio file | Origin | Licence |
 |---|---|---|
 | `scripts/patch_icons.py` | `pngs/patch-ipa-icon.py` | user-owned |
+| `Source/Settings/Kit/FZPageStyle.h` | `taurus/tweak/Sources/Settings/SGPageStyle.h` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/Kit/FZPageStyle.m` | `taurus/tweak/Sources/Settings/SGPageStyle.m` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/Kit/FZPage.h` | `taurus/tweak/Sources/Settings/SGPage.h` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/Kit/FZPage.m` | `taurus/tweak/Sources/Settings/SGPage.m` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/Kit/FZModPage.h` | `taurus/tweak/Sources/Settings/SGModPage.h` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/Kit/FZModPage.m` | `taurus/tweak/Sources/Settings/SGModPage.m` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/Kit/FZGlowSwitch.h` | `taurus/tweak/Sources/Settings/SGGlowSwitch.h` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/Kit/FZGlowSwitch.m` | `taurus/tweak/Sources/Settings/SGGlowSwitch.m` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/Kit/FZViewTree.h` | `taurus/tweak/Sources/Core/SGViewTree.h` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Settings/Kit/FZViewTree.m` | `taurus/tweak/Sources/Core/SGViewTree.m` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Redesign/Kit/FZGlass.h` | `taurus/tweak/Sources/Core/SGGlass.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZGlass.m` | `taurus/tweak/Sources/Core/SGGlass.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRTokens.h` | `taurus/tweak/Sources/Redesigned/Kit/SGRTokens.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRTokens.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRTokens.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRPalette.h` | `taurus/tweak/Sources/Redesigned/Kit/SGRPalette.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRPalette.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRPalette.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRGlass.h` | `taurus/tweak/Sources/Redesigned/Kit/SGRGlass.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRGlass.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRGlass.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRAccent.m` | storage and picker from `taurus/tweak/Sources/Redesigned/Kit/SGRAccent.x` @ fe3211c (colour-swap hooks not ported) | GPL-3.0 |
 
 ## Build-time tools (not shipped)
 

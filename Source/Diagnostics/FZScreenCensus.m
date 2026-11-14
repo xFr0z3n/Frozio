@@ -57,6 +57,10 @@ static void fz_viewDidAppear(UIViewController *self, SEL _cmd, BOOL animated) {
             FZLog("census: window %@ root tree:%@", FZShort(w), tree);
             FZLogTabBar(w.rootViewController);
         });
+        if ([self isKindOfClass:UITabBarController.class]) {
+            static dispatch_once_t tabOnce;
+            dispatch_once(&tabOnce, ^{ FZLogTabBar(self); });
+        }
         UINavigationController *nav = self.navigationController;
         FZLog("census: appear %@ | super %@ | title=%@ nav=%@ depth=%lu parent=%@ presenting=%@",
               FZShort(self), FZSuperChain(self.class),

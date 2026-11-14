@@ -149,6 +149,18 @@ jobs:
           [ -s "$RUNNER_TEMP/orig-ent.plist" ] || echo '<?xml version="1.0"?><plist version="1.0"><dict/></plist>' > "$RUNNER_TEMP/orig-ent.plist"
           plutil -p "$RUNNER_TEMP/orig-ent.plist"
 
+      - name: Inspect NaviMus asset catalog
+        run: |
+          xcrun --sdk iphoneos assetutil --info "$APP/Assets.car" > "$RUNNER_TEMP/assets-info.json"
+          python3 - "$RUNNER_TEMP/assets-info.json" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          for r in d[1:]:
+              print(json.dumps({k: r[k] for k in r if k in ("AssetType","Name","RenditionName","Idiom","Scale","Appearance",
+                    "PixelWidth","PixelHeight","Color components","Colorspace","Encoding","Template Mode","Compression","Subtype")}))
+          PY
+          xcrun actool --version | head -5
+
       - name: Inject Frozio.dylib
         run: |
           mkdir -p "$APP/Frameworks"
@@ -159,10 +171,17 @@ jobs:
           "$INSERT_DYLIB" --inplace --all-yes "@rpath/Frozio.dylib" "$APP/$EXE"
           otool -L "$APP/$EXE" | grep Frozio
 
-      - name: Install app icons (cyan primary, white alternate)
+      - name: Install app icons (asset catalog; loose-PNG fallback)
         run: |
-          python3 main/scripts/patch_icons.py --app "$APP" \
-            --primary main/Resources/AppIcons/cyan --alternate main/Resources/AppIcons/white
+          # Catalog icons are what iOS supports for setAlternateIconName (loose PNGs fail with -54).
+          if bash main/scripts/rebuild_assets.sh "$APP" "$GITHUB_WORKSPACE/main" "$RUNNER_TEMP/assets"; then
+            echo "ICON_MODE=catalog" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Asset catalog rebuild failed; falling back to loose-PNG icons (icon switching may fail with -54)."
+            python3 main/scripts/patch_icons.py --app "$APP" \
+              --primary main/Resources/AppIcons/cyan --alternate main/Resources/AppIcons/white
+            echo "ICON_MODE=loose" >> "$GITHUB_ENV"
+          fi
 
       - name: Expose Documents in the Files app (debug builds only)
         if: ${{ inputs.debug }}
@@ -278,7 +297,11 @@ jobs:
           otool -hv "$APP/Frameworks/Frozio.dylib" | awk 'NR>3' | grep -qw DYLIB || { echo "::error::injected Frozio.dylib is not an MH_DYLIB"; exit 1; }
           echo "== otool -L Frozio.dylib"; otool -L "$APP/Frameworks/Frozio.dylib"
           echo "== icons"; plutil -p "$APP/Info.plist" | sed -n '/CFBundleIcons/,/^  }/p'
-          ls -la "$APP"/AppIcon* "$APP"/FrozioWhite* "$APP/Frozio.bundle"
+          echo "icon mode: $ICON_MODE"
+          ls -la "$APP"/AppIcon* "$APP/Frozio.bundle"
+          if [ "$ICON_MODE" = catalog ]; then
+            xcrun --sdk iphoneos assetutil --info "$APP/Assets.car" | python3 -c "import json,sys; print(sorted({r.get('Name') for r in json.load(sys.stdin)[1:] if r.get('Name')}))"
+          fi
 
       - name: Verify signature
         if: steps.secrets.outputs.sign == 'true'
@@ -286,6 +309,12 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           echo "== entitlements"; codesign -d --entitlements :- "$APP" 2>/dev/null | plutil -p -
           echo "== signer"; codesign -dvv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier|Identifier='
+
+      - name: Upload asset catalog info
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: assets-info
+          path: ${{ runner.temp }}/assets-info.json
 
       - name: Package IPA
         run: |

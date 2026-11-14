@@ -55,3 +55,75 @@ Status vocabulary: **builds** / **passes CI** / **verified on device (by the use
 - **Setting:** `fz.cloudKitGuard`, default **on**.
 - **Tested:** builds, passes CI (run 43548694887), and is **verified on device by the user**: adding a server no longer crashes, and the app behaves as stock.
 - **Not tested:** the iCloud settings sync (KVS, separate from CloudKit) under the user's profile.
+
+## Feature: Frozio settings panel + app icon picker (`feat/frozio-settings`)
+
+- **What it changes for the user:**
+  - A Frozio logo button sits at the top-right of NaviMus's **Settings** tab. It opens the Frozio settings sheet, in spoti.pw's redesign settings style (black page, grey cards, accent #37F200).
+  - **App icon:** Cyan (default) or White, via `setAlternateIconName:`.
+  - **Keep library on this iPhone:** the CloudKit guard switch, on by default.
+  - **Frozio on GitHub:** a link to the repo.
+- **Hooks:** `-[UIViewController viewDidAppear:]` (UIKit, `v@:B`), shared with the debug census. The button is added only when all four parts of the census-verified identity hold:
+  - the class name is `_TtGC7SwiftUI32NavigationStackHostingControllerVS_7AnyView_`
+  - it's the root of a `SwiftUI.UIKitNavigationController`
+  - that controller sits under `SwiftUI.UIKitTabBarController`
+  - the nav title is `Settings`
+- **No NaviMus Swift symbols are hooked.**
+- **Verification:** `frozio.log` from build 7 (census lines 99, 142, 150).
+- **Fail-safe:**
+  - Any mismatch leaves the screen untouched.
+  - Exceptions are caught and logged.
+  - Frozio's pages are presented in their own navigation controller and never pushed onto SwiftUI's stacks.
+- **Code reuse:** the settings kit is adapted from taurus (GPL-3.0); see `LICENSES.md`.
+- **Tested:** debug and release builds pass CI (runs 43552106493, 43552234088).
+- **Not tested:**
+  - Everything on device.
+  - Whether SwiftUI later resets the injected bar button. The button is re-added on every appearance.
+  - The icon switch under the user's signer.
+
+### App icon: asset-catalog icons (build 14+)
+
+- **Device finding:** `setAlternateIconName` with loose-PNG alternates failed with `NSOSStatusErrorDomain -54` (build 12, iOS 17.5.1, user's signer).
+- **Fix:** `scripts/rebuild_assets.sh` runs in CI on macOS:
+  - It confirms the catalog is NaviMus 1.6.1's (only `AccentColor` and `arpeggiLogo` besides the icon, per `assetutil --info`).
+  - It extracts `arpeggiLogo` through CoreUI (`scripts/carextract.m`) and re-creates `AccentColor` with sRGB (0.996, 1, 1, 1).
+  - It adds `AppIcon` (cyan) and `AppIcon-White` with `actool --alternate-app-icon --include-all-app-icons`.
+  - It verifies the new catalog and merges actool's `CFBundleIcons` into Info.plist.
+  - If any step fails, CI falls back to the loose-PNG patch and warns.
+- **Side effect:** NaviMus's iOS 26 layered icon (`AppIcon.iconstack`) is replaced by Frozio's flat icons, as intended.
+- **CI-verified:** run 43554106642 shows `icon mode: catalog`, and the new catalog holds `AccentColor`, `AppIcon`, `AppIcon-White` and `arpeggiLogo`.
+- **Not tested:**
+  - the icon switch on device
+  - that NaviMus's accent colour and logo render as before
+
+## Known issues
+
+| Issue | Status |
+|---|---|
+| **App icon switching** fails on the user's re-signed install (iOS 17.5.1) with `NSOSStatusErrorDomain -54`. It fails with loose-PNG alternates (build 12) and with asset-catalog alternates (build 15) alike. | **Parked by the user, 2026-11-14.** The icon row is hidden (enable with `-DFROZIO_ICON_PICKER`). Cyan still installs as the primary icon through the rebuilt catalog. Likely cause: how sideloaded/re-signed apps are registered with LaunchServices (compare uYouEnhanced #1016, SideStore #1145). Not verified. |
+
+## Feature: redesign kit + accent colour (`feat/frozio-settings`)
+
+- **Kit:** `Source/Redesign/Kit/` holds tokens (`FZRTokens`), artwork palette (`FZRPalette`), glass (`FZGlass`, `FZRGlass`) and accent (`FZRAccent`). Adapted from taurus (GPL-3.0), see `LICENSES.md`. It's the shared theming layer every redesign feature uses.
+- **User-visible:** Frozio settings → Appearance → **Accent colour** (system colour picker) and **Reset accent**, default #37F200. It applies to Frozio's own screens now. **Verified on device by the user** (build 23 log: picks #FFFFFF, #32C759, reset to #37F200).
+- **NaviMus's own tint:** that's `Settings.appTintColorPreset` in NaviMus's `settings.json`. It isn't written yet; Share log (debug) attaches `settings.json` so the exact format can be confirmed first.
+- **Hooks:** none added.
+- **Not tested:** on device.
+
+## Feature: accent in NaviMus (`Source/Redesign/FZNaviMusTint.m`)
+
+- **What it changes for the user:** with Frozio settings → Appearance → **Use accent in NaviMus** on (default **off**), NaviMus's own tint becomes the redesign accent (default #37F200). It takes effect on the next launch. Turning it off restores NaviMus's previous tint.
+- **Mechanism:** data layer, no hooks. Frozio's constructor runs before NaviMus's `main()` and edits `Application Support/Arpeggi/shared_data/settings.json`:
+  - `appTintColorPreset` = `{"type":"custom","color":{red,green,blue,opacity}}`
+  - `tintColorBasedOnAppearance` = false
+  - `dateLastPersisted` = now, so the local copy wins over the iCloud KVS copy
+  - The original values are backed up once to `settings.json.frozio-backup`.
+- **Verification (user's device, 2026-11-14):**
+  - the file path came from the Share log listing
+  - the preset and custom JSON forms came from two `settings.json` samples
+  - `settingsMigrationVersion.json` = 2
+- **Fail-safe:** nothing is written if the file is missing, the migration version isn't 2, the JSON isn't a dictionary, or the tint has an unknown shape. No backup means no change. Exceptions are caught.
+- **Verified on device by the user (build 26, 2026-11-14):** on → NaviMus uses the accent after a restart; off → NaviMus's own tint comes back.
+- **Not tested:**
+  - the iCloud KVS round trip
+  - the order of a tint change made in NaviMus while the switch is on (Frozio wins on the next launch, by design)
