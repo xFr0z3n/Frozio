@@ -255,7 +255,12 @@ private struct LibraryTab: View {
         NavigationStack {
             List {
                 ForEach(["Playlists", "Artists", "Albums", "Songs", "Genres", "Downloaded"], id: \.self) { name in
-                    if name == "Albums" {
+                    if name == "Songs" {
+                        NavigationLink(name) {
+                            StandInHostedGrid().ignoresSafeArea(edges: .bottom).navigationTitle("Songs")
+                                .toolbar { Button("Sort") { NotificationCenter.default.post(name: .init("standin.resort"), object: nil) } }
+                        }
+                    } else if name == "Albums" {
                         NavigationLink(name) { StandInAlbumGrid().ignoresSafeArea(edges: .bottom).navigationTitle("Albums") }
                     } else {
                         NavigationLink(name) { LibraryCategory(name: name) }
@@ -663,6 +668,46 @@ private struct StandInAlbumGrid: UIViewRepresentable {
             let cell = view.dequeueReusableCell(withReuseIdentifier: "album", for: path) as! HostingCollectionViewCell<StandInCoverArtView>
             cell.host(StandInCoverArtView(index: path.item))
             return cell
+        }
+    }
+}
+
+// NaviMus's other lists: plain UICollectionViewCells with UIHostingConfiguration (device log, build 45:
+// "UICollectionViewCell / UIKit._UICustomContentConfiguration"), the cover in @State loaded on appear.
+private struct StandInHostedGrid: UIViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> UICollectionView {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 170, height: 170)
+        layout.minimumLineSpacing = 12
+        layout.sectionInset = UIEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
+        let view = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        view.backgroundColor = .black
+        view.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "song")
+        view.dataSource = context.coordinator
+        context.coordinator.view = view
+        NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.resort), name: .init("standin.resort"), object: nil)
+        return view
+    }
+    func updateUIView(_ view: UICollectionView, context: Context) {}
+    final class Coordinator: NSObject, UICollectionViewDataSource {
+        weak var view: UICollectionView?
+        var order = Array(0..<40)
+        func configure(_ cell: UICollectionViewCell, _ item: Int) {
+            cell.contentConfiguration = UIHostingConfiguration { StandInCoverArtView(index: item) }.margins(.all, 0)
+        }
+        func collectionView(_ view: UICollectionView, numberOfItemsInSection section: Int) -> Int { order.count }
+        func collectionView(_ view: UICollectionView, cellForItemAt path: IndexPath) -> UICollectionViewCell {
+            let cell = view.dequeueReusableCell(withReuseIdentifier: "song", for: path)
+            configure(cell, order[path.item])
+            return cell
+        }
+        // As NaviMus does when its sort changes: the visible cells are filled again in place (a diffable reconfigure).
+        @objc func resort() {
+            order.reverse()
+            guard let view else { return }
+            for path in view.indexPathsForVisibleItems { if let cell = view.cellForItem(at: path) { configure(cell, order[path.item]) } }
+            NSLog("[harness] hosted grid re-sorted in place")
         }
     }
 }
