@@ -44,6 +44,8 @@ NSString *const FZRKeyPlayerShrink = @"fz.redesign.player.shrink";
 NSString *const FZRKeyPlayerTimes = @"fz.redesign.player.times";
 // chroma.pw's Artwork: 0 Cover Art, 1 Animated, 2 Visualizer, 3 Auto (an animated cover when there is one).
 static NSString *const kArtworkKey = @"fz.redesign.player.artwork";
+// An animated cover fills the whole screen behind the player (on), or stays in the cover's window (off).
+static NSString *const kAnimatedFullScreenKey = @"fz.redesign.player.animatedFullScreen";
 static NSString *const kLyricsShadersKey = @"fz.redesign.lyrics.shaders";   // chroma.pw's Lyrics → Lyrics shaders (off)
 typedef NS_ENUM(NSInteger, FZRArtworkMode) { FZRArtworkCover = 0, FZRArtworkAnimated, FZRArtworkVisualizer, FZRArtworkAuto };
 
@@ -552,7 +554,9 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
 
 @implementation FZRPlayerViewController {
     NSString *_importingFor;   // the song an .lrc file is being picked for
-    FZRAnimatedCoverView *_animated;
+    FZRAnimatedCoverView *_animated, *_animatedBackdrop;
+    UIView *_animatedScrim;   // darkens the full-screen video at the top and bottom, for the controls
+    BOOL _backdropShowing;
     FZRVisualizerView *_visualizer, *_lyricsShader;
     NSString *_animatedAlbum;   // "artist|album" the animated cover was asked for
     FZRArtworkField *_field;
@@ -632,6 +636,22 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     _fluid = [[FZRKawarpView alloc] initWithFrame:view.bounds];
     _fluid.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [view addSubview:_fluid];
+    // An animated cover over the whole screen, under everything else.
+    _animatedBackdrop = [[FZRAnimatedCoverView alloc] initWithFrame:view.bounds];
+    _animatedBackdrop.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [view addSubview:_animatedBackdrop];
+    _animatedScrim = [[UIView alloc] initWithFrame:view.bounds];
+    _animatedScrim.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _animatedScrim.userInteractionEnabled = NO;
+    _animatedScrim.alpha = 0;
+    CAGradientLayer *shade = [CAGradientLayer layer];
+    shade.colors = @[(id)[UIColor colorWithWhite:0 alpha:0.45].CGColor, (id)[UIColor colorWithWhite:0 alpha:0].CGColor,
+                     (id)[UIColor colorWithWhite:0 alpha:0].CGColor, (id)[UIColor colorWithWhite:0 alpha:0.75].CGColor];
+    shade.locations = @[@0, @0.22, @0.45, @0.85];
+    shade.frame = view.bounds;
+    shade.needsDisplayOnBoundsChange = YES;
+    [_animatedScrim.layer addSublayer:shade];
+    [view addSubview:_animatedScrim];
     // Lyrics shaders: a shader moving with the music behind the lines.
     _lyricsShader = [[FZRVisualizerView alloc] initWithFrame:view.bounds];
     _lyricsShader.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -956,6 +976,7 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     _plate.transform = transform;
     _cover.frame = _plate.bounds;
     _animated.frame = _plate.bounds;
+    _animatedScrim.layer.sublayers.firstObject.frame = _animatedScrim.bounds;
     _visualizer.frame = _plate.bounds;
     CGFloat radius = (_lyricsOpen || _queueOpen) ? FZRRadiusThumb : FZRRadiusArtwork;
     _cover.layer.cornerRadius = radius;
@@ -1034,6 +1055,7 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     }
     [self showPaused:NO animated:YES];
     [self updateLyricsShader];
+    [self applyBackdropLayout];
     FZRAnimateLayout(self.view, ^{ [self.view setNeedsLayout]; }, nil);
     for (UIView *panel in @[_lyrics, _queueList]) {
         BOOL shown = (panel == _lyrics && lyrics) || (panel == _queueList && queue);
@@ -1170,6 +1192,7 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     if (visualizer || mode == FZRArtworkCover || !FZRAnimatedCoversConfigured()) {
         _animatedAlbum = nil;
         [_animated stop];
+        [self showAnimatedFile:nil];
         return;
     }
     NSDictionary *info = FZNowPlayingInfo();
@@ -1178,13 +1201,38 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     NSString *key = [NSString stringWithFormat:@"%@|%@", artist ?: @"", album ?: @""];
     if ([key isEqualToString:_animatedAlbum]) return;
     _animatedAlbum = key;
-    if (!album.length) { [_animated stop]; return; }
+    if (!album.length) { [self showAnimatedFile:nil]; return; }
     __weak typeof(self) weakSelf = self;
     FZRAnimatedCoverFor(artist, album, ^(NSURL *file) {
         typeof(self) player = weakSelf;
         if (!player || ![key isEqualToString:player->_animatedAlbum]) return;
-        if (file) [player->_animated playFile:file]; else [player->_animated stop];
+        [player showAnimatedFile:file];
     });
+}
+
+// Full screen (the default): the video behind the whole player and the still cover's window gone while the cover
+// shows; the lyrics and queue keep the thumbnail. In the window: the video in place of the still cover.
+- (void)showAnimatedFile:(NSURL *)file {
+    BOOL full = file && FZEnabled(kAnimatedFullScreenKey);
+    if (file && !full) [_animated playFile:file]; else [_animated stop];
+    if (full) [_animatedBackdrop playFile:file]; else [_animatedBackdrop stop];
+    _backdropShowing = full;
+    [self applyBackdropLayout];
+}
+
+- (void)applyBackdropLayout {
+    BOOL compact = _lyricsOpen || _queueOpen;
+    CGFloat scrim = _backdropShowing ? 1 : 0, plate = _backdropShowing && !compact ? 0 : 1;
+    [UIView animateWithDuration:0.35 animations:^{
+        self->_animatedScrim.alpha = scrim;
+        self->_plate.alpha = plate;
+    }];
+}
+
+- (void)setAnimatedFullScreen:(BOOL)on {
+    FZSetEnabled(kAnimatedFullScreenKey, on);
+    _animatedAlbum = nil;
+    [self updateArtwork];
 }
 
 - (void)animatedCoversChanged {
@@ -1228,6 +1276,13 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
         }
         [items addObject:action];
     }
+    BOOL fullScreen = FZEnabled(kAnimatedFullScreenKey);
+    UIAction *full = [UIAction actionWithTitle:@"Full screen" image:[UIImage systemImageNamed:@"arrow.up.left.and.arrow.down.right"] identifier:nil
+                                       handler:^(UIAction *a) { [weakSelf setAnimatedFullScreen:YES]; }];
+    UIAction *window = [UIAction actionWithTitle:@"In the cover window" image:[UIImage systemImageNamed:@"square"] identifier:nil
+                                         handler:^(UIAction *a) { [weakSelf setAnimatedFullScreen:NO]; }];
+    (fullScreen ? full : window).state = UIMenuElementStateOn;
+    [items addObject:[UIMenu menuWithTitle:@"Animated covers" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[full, window]]];
     FZRVisualizerStyle style = (FZRVisualizerStyle)FZInt(FZRKeyVisualizerStyle, FZRVisualizerShuffle);
     NSArray<NSString *> *styleNames = FZRVisualizerStyleNames();
     NSMutableArray *styles = [NSMutableArray array];
@@ -1483,9 +1538,10 @@ NSArray *FZRPlayerOptionSections(void) {
     FZModRow *queue = FZWithSymbol(FZSwitchRow(@"Queue", @"NaviMus's queue, in this player.", FZRKeyPlayerQueue), @"list.bullet");
     FZModRow *more = FZWithSymbol(FZSwitchRow(@"⋯ menu", nil, FZRKeyPlayerMore), @"ellipsis.circle");
     FZModRow *shrink = FZWithSymbol(FZSwitchRow(@"Smaller cover while paused", nil, FZRKeyPlayerShrink), @"arrow.down.right.and.arrow.up.left");
+    FZModRow *animatedFull = FZWithSymbol(FZSwitchRow(@"Animated covers full screen", @"Off keeps them in the cover's window.", kAnimatedFullScreenKey), @"arrow.up.left.and.arrow.down.right");
     return @[
         FZNotedSection(@"Rebuilt player", @[rebuilt], @"Applies right away."),
         FZSection(@"Mini player", @[miniPlay, miniPrevious, miniNext, miniAirPlay, miniDownload, miniProgress, miniRound, miniSwipe]),
-        FZSection(@"Player", @[background, fluidLook, slot, context, download, shuffle, repeat, times, airPlay, sleep, lyrics, queue, more, shrink]),
+        FZSection(@"Player", @[background, fluidLook, slot, context, download, shuffle, repeat, times, airPlay, sleep, lyrics, queue, more, shrink, animatedFull]),
     ];
 }
