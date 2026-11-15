@@ -3,6 +3,7 @@
 #import "Redesign/FZRNaviMusControls.h"
 #import "Redesign/FZRAppLook.h"
 #import "Redesign/Album/FZRAlbumPage.h"
+#import "Redesign/FZRTap.h"
 #import "Core/FZHook.h"
 #import "Core/FZLog.h"
 
@@ -106,8 +107,9 @@ __attribute__((unused)) static NSString *describe(id element) {
             ([element accessibilityTraits] & UIAccessibilityTraitButton) ? @" button" : @"", NSStringFromClass([element class])];
 }
 
-// The element to activate: with an anchor, the first match after the element labelled `after` (NaviMus labels a
-// row "<title>", its download ring, then "More"), else the first match; buttons before plain elements.
+// The buttons to press: with an anchor, the first match after the element labelled `after` (NaviMus labels a row
+// "<title>", its download ring, then "More"), else every match. Buttons only: activating NaviMus's plain "More"
+// element (a row's context menu) put its list into select mode on device (build 36).
 static NSArray *candidates(NSArray *elements, NSString *after, NSArray<NSString *> *labels) {
     NSUInteger start = 0;
     if (after.length) {
@@ -118,37 +120,96 @@ static NSArray *candidates(NSArray *elements, NSString *after, NSArray<NSString 
         }
         if (start == NSNotFound) return @[];
     }
-    NSMutableArray *buttons = [NSMutableArray array], *others = [NSMutableArray array];
+    NSMutableArray *found = [NSMutableArray array];
     for (NSString *wanted in labels) {
         for (NSUInteger i = start; i < elements.count; i++) {
             id element = elements[i];
+            if (!([element accessibilityTraits] & UIAccessibilityTraitButton)) continue;
             if ([[element accessibilityLabel] caseInsensitiveCompare:wanted] != NSOrderedSame) continue;
-            [([element accessibilityTraits] & UIAccessibilityTraitButton ? buttons : others) addObject:element];
+            [found addObject:element];
             if (after.length) break;   // a row's own control or none: never the next row's
         }
     }
-    return [buttons arrayByAddingObjectsFromArray:others];
+    return found;
 }
 
-BOOL FZRActivateNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels) {
+// NaviMus's list under the rebuilt page: the scroll view a control sits in.
+static UIScrollView *scrollViewOf(UIView *root, CGPoint pointInRoot) {
+    UIScrollView *best = nil;
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:root];
+    while (queue.count) {
+        UIView *view = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if (objc_getAssociatedObject(view, &kOverlayKey)) continue;
+        if ([view isKindOfClass:UIScrollView.class] && CGRectContainsPoint([view convertRect:view.bounds toView:root], pointInRoot)) {
+            best = (UIScrollView *)view;   // the innermost wins, as later in the walk
+        }
+        [queue addObjectsFromArray:view.subviews];
+    }
+    return best;
+}
+
+static CGPoint activationPointIn(UIWindow *window, id element) {
+    CGPoint screen = [element accessibilityActivationPoint];
+    return [window convertPoint:screen fromCoordinateSpace:window.screen.coordinateSpace];
+}
+
+static NSArray *collectAll(UIViewController *page) {
+    NSMutableArray *elements = [NSMutableArray array];
+    NSHashTable *seen = [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality];
+    collect(page.view, 0, elements, seen);
+    UINavigationBar *bar = page.navigationController.navigationBar;
+    if (bar) collect(bar, 0, elements, seen);
+    return elements;
+}
+
+BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels, CGPoint alignTo) {
     UIView *root = page.view;
-    if (!root) return NO;
+    UIWindow *window = root.window;
+    if (!root || !window) return NO;
     UIView *cover = nil;
     for (UIView *sub in root.subviews) if (objc_getAssociatedObject(sub, &kOverlayKey)) cover = sub;
     __block BOOL done = NO;
-    NSMutableArray *elements = [NSMutableArray array];
-    // Found and activated in one go: shown and hidden again in between, SwiftUI rebuilds its accessibility
-    // nodes and the ones found first no longer activate (device log, build 35).
+    __block NSArray *elements = @[];
+    // Found and pressed in one go: shown and hidden again in between, SwiftUI rebuilds its accessibility nodes
+    // and the ones found first no longer activate (device log, build 35).
     withNaviMusShown(page, cover, ^{
-        NSHashTable *seen = [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality];
-        collect(root, 0, elements, seen);
-        UINavigationBar *bar = page.navigationController.navigationBar;
-        if (bar) collect(bar, 0, elements, seen);
-        for (id element in candidates(elements, after, labels)) {
+        elements = collectAll(page);
+        NSArray *found = candidates(elements, after, labels);
+        BOOL forceTap = NO;
+#ifdef FROZIO_HARNESS
+        forceTap = [NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessForceTap"];   // iOS 17's path on iOS 26
+#endif
+        for (id element in forceTap ? @[] : found) {
             done = [element accessibilityActivate];
             FZLog("redesign: NaviMus control %@ activated=%d", describe(element), done);
-            if (done) break;
+            if (done) return;
         }
+        // iOS 17 opens a SwiftUI menu only on a touch: tap it, as VoiceOver does when activation is refused.
+        id element = found.firstObject;
+        if (!element) return;
+        CGPoint point = activationPointIn(window, element);
+        if (!CGPointEqualToPoint(alignTo, CGPointZero) && fabs(point.y - alignTo.y) > 1) {
+            // Under the finger: NaviMus's list scrolls so its control is where the rebuilt page's was tapped, so
+            // the menu NaviMus opens is anchored there.
+            UIScrollView *list = scrollViewOf(root, [root convertPoint:point fromView:window]);
+            if (list) {
+                // Past its own range if need be (a short album can't scroll): the list is hidden under the
+                // rebuilt page, and it springs back the next time it's touched.
+                CGFloat y = list.contentOffset.y + (point.y - alignTo.y);
+                [list setContentOffset:CGPointMake(list.contentOffset.x, y) animated:NO];
+                [list layoutIfNeeded];
+                NSArray *again = candidates(collectAll(page), after, labels);
+                if (again.firstObject) element = again.firstObject;
+                point = activationPointIn(window, element);
+            }
+        }
+        if (!CGRectContainsPoint(window.bounds, point)) {
+            FZLogError("redesign: NaviMus control %@ is off screen at %@", describe(element), NSStringFromCGPoint(point));
+            return;
+        }
+        done = FZRTap(window, point);
+        FZLog("redesign: NaviMus control %@ tapped=%d at %@", describe(element), done, NSStringFromCGPoint(point));
     });
     if (done) return YES;
 #ifdef FROZIO_DEBUG
@@ -163,13 +224,41 @@ BOOL FZRActivateNaviMusControl(UIViewController *page, NSString *after, NSArray<
     return NO;
 }
 
+BOOL FZRActivateMenuItem(NSArray<NSString *> *labels) {
+    NSMutableArray *elements = [NSMutableArray array];
+    NSHashTable *seen = [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality];
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) collect(window, 0, elements, seen);
+    }
+    for (NSString *wanted in labels) {
+        for (id element in elements) {
+            NSString *label = [element accessibilityLabel];
+            if (![label isEqualToString:wanted] && ![label hasPrefix:[wanted stringByAppendingString:@" "]]) continue;
+            BOOL done = [element accessibilityActivate];
+            FZLog("redesign: menu item %@ activated=%d", describe(element), done);
+            if (done) return YES;
+        }
+    }
+#ifdef FROZIO_DEBUG
+    NSMutableArray *names = [NSMutableArray array];
+    for (id element in elements) [names addObject:describe(element)];
+    FZLog("redesign: no menu item %@ among %@", [labels componentsJoinedByString:@"/"], [names componentsJoinedByString:@", "]);
+#endif
+    return NO;
+}
+
+BOOL FZRActivateNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels) {
+    return FZRPressNaviMusControl(page, after, labels, CGPointZero);
+}
+
 #pragma mark - NaviMus's navigation bar under a rebuilt page
 
 static IMP fz_origBarLayout;
 
-// An empty mask: the bar draws nothing but stays a visible view, so iOS 17 still lists and activates its items
-// (an alpha of 0 took them out of accessibility, device log build 35). It takes no touches meanwhile, so the
-// rebuilt page's own buttons under it get them.
+// An empty mask: the bar draws nothing but stays a visible view. It keeps taking touches: NaviMus's own back
+// and ⋯ sit where the rebuilt page draws its glass back and ⋯, so a tap there is a real tap on NaviMus's own
+// (how the user's ⋯ worked on device, build 36).
 static CALayer *emptyMask(void) {
     CALayer *mask = [CALayer layer];
     mask.frame = CGRectZero;
@@ -179,13 +268,12 @@ static CALayer *emptyMask(void) {
 static void applyHidden(UINavigationBar *bar, BOOL hidden) {
     objc_setAssociatedObject(bar, &kBarHiddenKey, hidden ? @YES : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     bar.layer.mask = hidden ? emptyMask() : nil;
-    bar.userInteractionEnabled = !hidden;
 }
 
 // UIKit's and SwiftUI's own updates can't bring the bar back while a rebuilt page is on top.
 static void fz_barLayout(UINavigationBar *self, SEL _cmd) {
     ((void (*)(id, SEL))fz_origBarLayout)(self, _cmd);
-    if (objc_getAssociatedObject(self, &kBarHiddenKey) && (!self.layer.mask || self.userInteractionEnabled)) applyHidden(self, YES);
+    if (objc_getAssociatedObject(self, &kBarHiddenKey) && !self.layer.mask) applyHidden(self, YES);
 }
 
 void FZRSetNaviMusBarHidden(UIViewController *page, BOOL hidden, id<UIViewControllerTransitionCoordinator> transition) {

@@ -278,3 +278,21 @@ The user's device log of build 35: the top ⋯ stopped working, and shuffle, dow
 - **The rebuilt page's top buttons** are pinned under the status bar (the window's inset), because the page's own inset now includes NaviMus's bar.
 - **Harness:** the stand-in's Shuffle, Download and More moved into its navigation bar, as on NaviMus. The top ⋯ opens NaviMus's menu from the masked bar; shuffle, download and the ⋯ of "Face The Flame" activate NaviMus's own controls on the first try; back restores the bar.
 - **Not tested:** on device (iOS 17.5.1). If anything still isn't found, the debug log lists every element with the bar's alpha and item counts.
+
+## Redesign R4d: album page colours and NaviMus's controls on iOS 17 (`fix/redesign-album-match`)
+
+From the user's device test of build 36 (only the top ⋯ worked) and a side-by-side with chroma.pw.
+
+- **Colours, measured on the user's screenshots of the same album** (pixel averages and Oklab):
+  - **Field:** chroma.pw is (24, 10, 8) at the foot of the cover, L 0.165 C 0.025; ours was (49, 17, 7), L 0.226 C 0.055, from an uncapped source. The field's lightness ceiling is now 0.165 (0.145 with Increase Contrast), and its chroma lift 0.6 (was 0.34 and 1.3, taurus's). chroma.pw's current field is darker and duller than the fork's.
+  - **Genre / type / year line:** chroma.pw draws it at about 90 % white (brightest pixels 234, 216, 213) and semibold, not taurus's tertiary regular. Now Footnote semibold, white 90 %.
+  - **Circles:** chroma.pw's read (37, 26, 23) on a (24, 10, 8) field, with a ring (58, 47, 44). Before iOS 26 they're now the redesign's control fallback, thin dark material with a 12 % white ring; the Chrome material used before was invisible on a dark field.
+- **NaviMus's controls on iOS 17:**
+  - **Song ⋯** is a SwiftUI `Menu`, and iOS 17 opens one only on a touch: activation returned NO on device. Frozio now delivers a **real tap** (`FZRTap`: a UITouch with a digitizer HID event through `-[UIApplication sendEvent:]`, as KIF and EarlGrey do on devices; private selectors and IOKit symbols checked at run time). NaviMus's list first scrolls that row's ⋯ to where the user tapped, past its range if need be, so NaviMus's menu opens there.
+  - **Buttons only:** activating NaviMus's plain "More" element (a row's context menu) had put its list into select mode on device, so only elements with the button trait are pressed.
+  - **Shuffle**, as Control Center does it: NaviMus plays the album (`PlayAlbumIntent`), then its own `changeShuffleModeCommand` handler gets an `MPChangeShuffleModeCommandEvent` with `kMRMediaRemoteOptionShuffleMode` 3 (items; 1 is off, 2 collections; the harness probe read `shuffleType` 1, 0, 2 for 3, 1, 2). Tapped again while this album shuffles, it turns shuffle off.
+  - **Top back and ⋯:** NaviMus's bar stays masked but touchable, so a tap there is a real tap on NaviMus's own back and ⋯, which sit under the rebuilt page's glass ones. That's how the user's ⋯ worked on device.
+  - **Download:** NaviMus's Download control if the page shows one (pressed, or tapped); otherwise NaviMus's own ⋯ menu opens and its Download item is picked. If it's named differently, the menu stays open for the user and the log lists its items.
+- **FZRemote:** `FZRemoteSendWithOptions` and `FZRemoteEvent` (events with MediaRemote options).
+- **Tested (harness, with `-FZHarnessForceTap YES` forcing iOS 17's tap path on iOS 26):** the stand-in's rows now use SwiftUI `Menu`s and its player handles `changeShuffleModeCommand`. A song's ⋯ opened NaviMus's row menu at that row, and its "Play Next" ran. Shuffle → `PlayAlbumIntent` and NaviMus's shuffle handler type 1, with the glyph in the accent and the capsule on Pause. Download → NaviMus's Download tapped in its masked bar. The top ⋯ → NaviMus's menu. Field, meta line and circles as measured.
+- **Not tested:** on device. NaviMus's ⋯ menu item names for Download are unknown until the debug log of the first try.

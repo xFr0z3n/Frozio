@@ -35,7 +35,7 @@ static id fz_addTargetWithHandler(MPRemoteCommand *self, SEL _cmd, MPRemoteComma
 // MPRemoteCommandEvent's -init aborts, so it comes from the factory +eventWithCommand:mediaRemoteType:options:
 // (private, checked at run time with its exact types; verified on iOS 17.5.1 and 26.5), typed by the command's
 // own -mediaRemoteCommandType.
-static MPRemoteCommandEvent *eventFor(MPRemoteCommand *command) {
+MPRemoteCommandEvent *FZRemoteEvent(MPRemoteCommand *command, NSDictionary *options) {
     Class eventClass = NSClassFromString(@"MPRemoteCommandEvent");
     SEL make = NSSelectorFromString(@"eventWithCommand:mediaRemoteType:options:");
     SEL typeOf = NSSelectorFromString(@"mediaRemoteCommandType");
@@ -47,14 +47,18 @@ static MPRemoteCommandEvent *eventFor(MPRemoteCommand *command) {
         return nil;
     }
     unsigned int mediaRemoteType = ((unsigned int (*)(id, SEL))method_getImplementation(type))(command, typeOf);
-    return ((id (*)(Class, SEL, id, unsigned int, id))method_getImplementation(factory))(eventClass, make, command, mediaRemoteType, @{});
+    return ((id (*)(Class, SEL, id, unsigned int, id))method_getImplementation(factory))(eventClass, make, command, mediaRemoteType, options ?: @{});
 }
 
 BOOL FZRemoteSend(MPRemoteCommand *command) {
+    return FZRemoteSendWithOptions(command, nil);
+}
+
+BOOL FZRemoteSendWithOptions(MPRemoteCommand *command, NSDictionary *options) {
     MPRemoteCommandHandlerStatus (^handler)(MPRemoteCommandEvent *) = command ? [sHandlers objectForKey:command] : nil;
     if (!handler) return NO;
     @try {
-        MPRemoteCommandEvent *event = eventFor(command);
+        MPRemoteCommandEvent *event = FZRemoteEvent(command, options);
         return event && handler(event) == MPRemoteCommandHandlerStatusSuccess;
     } @catch (NSException *e) {
         FZLogError("remote: NaviMus's handler threw %@", e.name);

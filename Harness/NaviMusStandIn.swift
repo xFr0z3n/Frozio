@@ -191,7 +191,10 @@ private struct AlbumViewWrapper: View {
                     Text(title)
                     Spacer()
                     Image(systemName: "circle.dotted")
-                    Button { NSLog("[harness] NaviMus row More: %@", title) } label: { Image(systemName: "ellipsis") }
+                    Menu {
+                        Button("Play Next") { NSLog("[harness] NaviMus row menu: Play Next for %@", title) }
+                        Button("Add to Playlist") {}
+                    } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
                         .accessibilityLabel("More")
                 }
             }
@@ -292,6 +295,12 @@ final class StandInPlayer {
     private var playing = false
 
     private init() {
+        MPRemoteCommandCenter.shared().changeShuffleModeCommand.addTarget { event in
+            guard let event = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
+            MPRemoteCommandCenter.shared().changeShuffleModeCommand.currentShuffleType = event.shuffleType
+            NSLog("[harness] NaviMus shuffle handler → type %ld", event.shuffleType.rawValue)
+            return .success
+        }
         MPRemoteCommandCenter.shared().togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self, let song = self.song else { return .noActionableNowPlayingItem }
             self.playing.toggle()
