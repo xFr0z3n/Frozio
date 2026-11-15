@@ -5,6 +5,8 @@ extern NSNotificationName const FZRFieldColorDidChangeNotification;
 
 @interface FZRArtworkField : UIView
 @property (nonatomic) UIEdgeInsets bleed;
+/// The field keeps its colour all the way down instead of fading to black from mid-screen (chroma.pw's album page).
+@property (nonatomic) BOOL flat;
 @property (nonatomic) BOOL showsBackdrop;
 @property (nonatomic) BOOL flows;
 // The sharp artwork layered over the blurred backdrop, fading into it toward the bottom.

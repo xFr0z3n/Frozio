@@ -471,6 +471,7 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
 
     _field = [[FZRArtworkField alloc] initWithFrame:self.view.bounds];
     _field.bleed = kBleed;
+    _field.flat = YES;   // chroma.pw's album field keeps the cover's colour down the whole page
     _field.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:_field];
     __weak typeof(self) weakSelf = self;

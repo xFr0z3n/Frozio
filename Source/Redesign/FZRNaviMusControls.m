@@ -551,6 +551,16 @@ static void applyHidden(UINavigationBar *bar, BOOL hidden) {
     bar.layer.mask = hidden ? emptyMask() : nil;
 }
 
+// A bar button added or rebuilt in place lays out only the bar's button row, not the bar: styled then too, or it
+// showed unstyled until the bar's next layout while scrolling (Search's account button flickering, device build 47).
+static IMP fz_origButtonRowLayout;
+static void fz_buttonRowLayout(UIView *self, SEL _cmd) {
+    ((void (*)(id, SEL))fz_origButtonRowLayout)(self, _cmd);
+    UIView *bar = self.superview;
+    while (bar && ![bar isKindOfClass:UINavigationBar.class]) bar = bar.superview;
+    if (bar) FZRStyleBarButtons((UINavigationBar *)bar);
+}
+
 // UIKit's and SwiftUI's own updates can't bring the bar back while a rebuilt page is on top.
 static void fz_barLayout(UINavigationBar *self, SEL _cmd) {
     ((void (*)(id, SEL))fz_origBarLayout)(self, _cmd);
@@ -664,6 +674,8 @@ void FZRInstallPages(void) {
     BOOL layout = (push || set) && FZHookInstanceMethod(UIViewController.class, @selector(viewDidLayoutSubviews), "v@:",
                                                (IMP)fz_viewDidLayoutSubviews, &fz_origLayout, "redesign.layout");
     BOOL barLayout = FZHookInstanceMethod(UINavigationBar.class, @selector(layoutSubviews), "v@:", (IMP)fz_barLayout, &fz_origBarLayout, "redesign.bar.layout");
+    Class buttonRow = NSClassFromString(@"_UIButtonBarStackView");
+    if (buttonRow) FZHookInstanceMethod(buttonRow, @selector(layoutSubviews), "v@:", (IMP)fz_buttonRowLayout, &fz_origButtonRowLayout, "redesign.bar.buttonRow");
     if (!barLayout) FZLogError("redesign: NaviMus's bar may show through (layout hook missing)");
     FZLog("redesign: pages %@ (push=%d stack=%d layout=%d)", (push || set) && layout ? @"installed" : @"NOT installed", push, set, layout);
     (void)layout;

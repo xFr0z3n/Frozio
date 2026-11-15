@@ -182,6 +182,7 @@ static const CGFloat kLyricsBlur = 0.3;
     CGFloat from = height * kBlackFrom + bleed.top;
     CGFloat to = MAX(from + 1, height * kBlackTo + bleed.top);
     _black.frame = painted;
+    _black.hidden = _flat || _fluid || _flows || _fills;
     _black.locations = @[@(MIN(1, from / total)), @(MIN(1, to / total))];
     _backdrop.frame = CGRectMake(0, 0, bounds.size.width, [self backdropHeightNow]);
     CGFloat fillHeight = MIN(bounds.size.height, round(windowHeight(self) * 0.625));
@@ -215,7 +216,7 @@ static const CGFloat kLyricsBlur = 0.3;
     // The fluid field is the whole picture, as the moving one is.
     _fluidLayer.hidden = !fluid || _covered;
     _fluidLayer.opacity = (float)_fluidOpacity;
-    _black.hidden = fluid || _flows || _fills;
+    _black.hidden = _flat || fluid || _flows || _fills;
     _backdrop.hidden = fluid || _flows || _fills;
     _fillBackground.hidden = !_fills || fluid || _flows;
     _fill.hidden = fluid || _flows || !_fills || !_image.CGImage;
@@ -235,7 +236,7 @@ static const CGFloat kLyricsBlur = 0.3;
         [self.layer insertSublayer:_flow above:_solid];
     }
     // The moving field is the whole picture: no still backdrop over it, no fade to black under it.
-    _black.hidden = flows || _fluid || _fills;
+    _black.hidden = _flat || flows || _fluid || _fills;
     _backdrop.hidden = flows || _fluid || _fills;
     _fillBackground.hidden = !_fills || flows || _fluid;
     _fill.hidden = flows || _fluid || !_fills || !_image.CGImage;
@@ -289,7 +290,7 @@ static const CGFloat kLyricsBlur = 0.3;
     if (fills == _fills) return;
     _fills = fills;
     if (fills) _fillBackground.backgroundColor = _color.CGColor;
-    _black.hidden = fills || _fluid || _flows;
+    _black.hidden = _flat || fills || _fluid || _flows;
     _backdrop.hidden = fills || _fluid || _flows;
     _fillBackground.hidden = !fills || _fluid || _flows;
     _fill.hidden = !fills || _fluid || _flows || !_image.CGImage;

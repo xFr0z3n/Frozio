@@ -11,7 +11,9 @@ static const CGFloat kMaxLuminance = 0.07;
 // Frozio: chroma.pw's current field is darker and duller than taurus's (0.34 / 1.3). Measured on its album page
 // for the same cover (user's screenshots, 2026-11-15): Oklab L 0.165, C 0.025 where these formulas gave L 0.226,
 // C 0.055 from an uncapped source, so the ceiling is chroma.pw's lightness and the lift scales chroma to match.
-static const CGFloat kFieldLightness = 0.165, kFieldLightnessContrast = 0.145;
+// Second measurement (ADL, 2026-11-15): L 0.179, C 0.040, flat from under the hero down past the rows; the ceiling
+// sits between the two.
+static const CGFloat kFieldLightness = 0.175, kFieldLightnessContrast = 0.15;
 static const CGFloat kFieldChromaLift = 0.6, kFieldChroma = 0.14;
 static const CGFloat kBackdropWidth = 160, kBackdropMaxHeight = 400, kBackdropSigma = 12;
 static const CGFloat kDissolveWidth = 96, kDissolveSigma = 5;
