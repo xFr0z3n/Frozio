@@ -149,6 +149,15 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
 
     NSMutableArray<UIView *> *items = [NSMutableArray array];
     for (UIView *sub in bar.subviews) collectItems(sub, 0, items);
+    // A wide item is a page's title (NaviMus's artist page puts the artist's name there, hidden until the list
+    // scrolls): no glass and no move, or an empty capsule sat in the middle of the bar (device, build 46).
+    for (UIView *item in [items copy]) {
+        if (item.bounds.size.width <= 100) continue;
+        [items removeObject:item];
+        UIView *shape = objc_getAssociatedObject(item, &kCircleKey);
+        shape.hidden = YES;
+        if (!CGAffineTransformIsIdentity(item.transform)) item.transform = CGAffineTransformIdentity;
+    }
     id filter = white ? whiteFilter() : nil;
     CGFloat width = bar.bounds.size.width;
     NSMutableArray<UIView *> *leading = [NSMutableArray array], *trailing = [NSMutableArray array];

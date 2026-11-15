@@ -284,7 +284,15 @@ private struct LibraryCategory: View {
         List {
             ForEach([("2017", albums.prefix(5)), ("2018", albums.dropFirst(5).prefix(5)), ("2019", albums.dropFirst(10))], id: \.0) { year, group in
                 Section {
-                    ForEach(Array(group)) { AlbumRow(album: $0) }
+                    ForEach(Array(group)) { album in
+                        if name == "Playlists" {
+                            NavigationLink { PlaylistDetailViewWrapper(playlist: Playlist(id: "pl-\(album.id)", name: album.title)) } label: { AlbumRow(album: album) }
+                        } else if name == "Artists" {
+                            NavigationLink { ArtistWrapper(name: album.artist) } label: { AlbumRow(album: album) }
+                        } else {
+                            AlbumRow(album: album)
+                        }
+                    }
                 } header: {
                     Text(year).font(.title2.bold()).foregroundStyle(.green)
                         .frame(minWidth: 44, minHeight: 44).padding(.horizontal, 4)
@@ -318,6 +326,44 @@ private struct LibraryCategory: View {
                         Button("Shuffle All") {}
                     } label: { Image(systemName: "ellipsis") }
                         .accessibilityLabel("More")
+                }
+            }
+    }
+}
+
+// Shaped like NaviMus's playlist page root (Arpeggi.PlaylistDetailViewWrapper { playlist: Playlist }, device log
+// build 46), so the redesign covers it as it does the album page.
+struct Playlist { let id: String; let name: String }
+private struct PlaylistDetailViewWrapper: View {
+    let playlist: Playlist
+    var body: some View {
+        List {
+            ForEach(Array(standInSongs.enumerated()), id: \.offset) { n, title in
+                Text(title).onTapGesture {
+                    NSLog("[harness] NaviMus playlist row tapped: %@", title)
+                    StandInPlayer.shared.play("so-\(n + 1)")
+                }
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle(playlist.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// NaviMus's artist page: the artist's name as the bar's title item, hidden until the list scrolls (device log
+// build 46: a 226 pt wide item in the middle of the bar).
+private struct ArtistWrapper: View {
+    let name: String
+    var body: some View {
+        List { ForEach(0..<30) { Text("Artist row \($0)") } }
+            .listStyle(.plain)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) { Text(name).font(.headline).frame(width: 220).opacity(0) }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu { Button("Shuffle") {} } label: { Image(systemName: "line.3.horizontal.decrease") }.accessibilityLabel("Sort")
+                    Menu { Button("Go") {} } label: { Image(systemName: "ellipsis") }.accessibilityLabel("More")
                 }
             }
     }

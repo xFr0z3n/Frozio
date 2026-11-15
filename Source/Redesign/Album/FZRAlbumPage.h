@@ -22,10 +22,13 @@ extern NSString *const FZRKeyCircleMore;      // "fz.redesign.circle.more": behi
 extern NSString *const FZRKeyCircleActions;   // "fz.redesign.circle.actions": behind shuffle and download (on)
 extern NSString *const FZRKeyAlbumShuffle;    // "fz.redesign.album.shuffle": the shuffle button (on)
 extern NSString *const FZRKeyAlbumDownload;   // "fz.redesign.album.download": the download button (on)
+extern NSString *const FZRKeyPlaylistPage;    // "fz.redesign.playlist.page": playlists get the album page (on)
 extern NSString *const FZRKeyAlbumMeta;       // "fz.redesign.album.meta": the genre · type · year line (on)
 
 @interface FZRAlbumPage : UIViewController
 - (instancetype)initWithAlbumID:(NSString *)albumID naviMusPage:(UIViewController *)naviMusPage;
+/// The same page for a playlist (getPlaylist): owner and "songs · length" under the name, each row with its cover.
+- (instancetype)initWithPlaylistID:(NSString *)playlistID naviMusPage:(UIViewController *)naviMusPage;
 @end
 
 /// The redesigned pages' options page (Frozio settings → Appearance → Redesigned pages).

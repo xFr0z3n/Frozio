@@ -32,6 +32,18 @@ Every borrowed file or block carries a header comment `// Adapted from <repo>/<p
 | `Source/Settings/Kit/FZGlowSwitch.m` | `taurus/tweak/Sources/Settings/SGGlowSwitch.m` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
 | `Source/Settings/Kit/FZViewTree.h` | `taurus/tweak/Sources/Core/SGViewTree.h` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
 | `Source/Settings/Kit/FZViewTree.m` | `taurus/tweak/Sources/Core/SGViewTree.m` @ fe3211c (renamed SG→FZ, Spotify-only parts removed) | GPL-3.0 |
+| `Source/Lyrics/Taurus/BiniLyrics.m` | `taurus/tweak/Sources/Shared/LyricsSources/BiniLyrics.m` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/Musixmatch.m` | `taurus/tweak/Sources/Shared/LyricsSources/Musixmatch.m` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/Unison.m` | `taurus/tweak/Sources/Shared/LyricsSources/Unison.m` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/NetEase.m` | `taurus/tweak/Sources/Shared/LyricsSources/NetEase.m` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/LrcLib.m` | `taurus/tweak/Sources/Shared/LyricsSources/LrcLib.m` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/QQMusic.m` | `taurus/tweak/Sources/Shared/LyricsSources/QQMusic.m` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/KuGou.m` | `taurus/tweak/Sources/Shared/LyricsSources/KuGou.m` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/SGTTML.m` | `taurus/tweak/Sources/Shared/LyricsSources/SGTTML.m` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/LyricsSources.h` | `taurus/tweak/Sources/Shared/LyricsSources/LyricsSources.h` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/LyricsCommon.m` | `taurus/tweak/Sources/Shared/LyricsSources/LyricsSources.m (requests and shared parts)` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/Lyrics.h` | `taurus/tweak/Sources/Shared/Lyrics/Lyrics.h` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
+| `Source/Lyrics/Taurus/KaraokeTiming.m` | `taurus/tweak/Sources/Shared/Lyrics/KaraokeTiming.m` @ fe3211c (imports changed, Spotify-only parts left out) | GPL-3.0 |
 | `Source/Redesign/Kit/FZGlass.h` | `taurus/tweak/Sources/Core/SGGlass.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
 | `Source/Redesign/Kit/FZGlass.m` | `taurus/tweak/Sources/Core/SGGlass.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
 | `Source/Redesign/Kit/FZRTokens.h` | `taurus/tweak/Sources/Redesigned/Kit/SGRTokens.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
