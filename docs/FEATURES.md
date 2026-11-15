@@ -307,3 +307,12 @@ From the user's device test of build 37 (song ⋯ worked; shuffle played but nev
 - **Bars move with Reduce Motion on too** (three small bars, as chroma.pw's). The page logs Reduce Motion and Reduce Transparency when it opens.
 - **Stand-in:** NaviMus's shapes from the logs: the bar carries only ⋯ (a SwiftUI menu with Download), and the header has shuffle ("Repeat"), Play and Love.
 - **Not tested:** on device.
+
+## Redesign R4f: download in one tap, no menu on screen (`fix/redesign-download-one-tap`)
+
+From the user's device test of build 38: Download needed three taps and NaviMus's ⋯ menu showed at the top right.
+
+- **Cause (device log):** NaviMus's ⋯ is a SwiftUI menu whose button carries an empty placeholder menu until the menu has shown once ("menu has 0 children"). The first tap opened the menu, but its items never showed up in accessibility, so nothing was pressed; the second tap only closed the menu; the third found the button's menu filled and performed "Download".
+- **Fix:** `FZRPerformMenuActionUnseen` (`FZRNaviMusControls`). If the button's menu is still empty, Frozio taps NaviMus's ⋯ and hides the menu's presentation from its first frame (`viewWillAppear:` / `viewDidAppear:` of the `…ContextMenu…` controller: the controller's view and its container at alpha 0, no touches). As soon as it appears, "Download" is performed from the now-filled button menu and the menu is dismissed. Only a menu opened this way is hidden; every other menu shows as before. If the menu has no Download item, it's shown so the user can pick one, and the old accessibility pick runs.
+- **Tested (harness, `-FZHarnessForceTap YES`):** one tap → the stand-in's "Download album" ran (try 0, ~60 ms), no menu on screen; a second tap downloaded again; a song's ⋯ afterwards opened its menu normally.
+- **Not tested:** on device.

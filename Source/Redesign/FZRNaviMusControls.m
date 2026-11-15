@@ -372,6 +372,125 @@ BOOL FZRActivateNaviMusControl(UIViewController *page, NSString *after, NSArray<
     return FZRPressNaviMusControl(page, after, labels, CGPointZero);
 }
 
+#pragma mark - a menu's action through an unseen menu
+
+// A SwiftUI menu builds its items only when it first shows: until then its button's menu is an empty placeholder
+// (device log, build 38: the first tap found 0 children, a tap after the menu had shown performed "Download"). So
+// the menu is opened once out of sight: its presentation is hidden from its first frame, the item is performed
+// from the button's now-filled menu, and the menu is closed again. One tap, nothing shows.
+typedef struct {
+    BOOL active, appeared;
+    __unsafe_unretained UIWindow *window;
+    CGPoint point;
+} FZRSilentState;
+
+static FZRSilentState sSilent;
+static NSArray<NSString *> *sSilentLabels;
+static void (^sSilentDone)(BOOL);
+static __weak UIViewController *sSilentMenu;
+static IMP fz_origMenuWillAppear, fz_origMenuDidAppear;
+
+static BOOL isContextMenu(UIViewController *vc) {
+    return [NSStringFromClass(vc.class) rangeOfString:@"ContextMenu"].location != NSNotFound;
+}
+
+static void setMenuHidden(UIViewController *menu, BOOL hidden) {
+    UIView *container = menu.presentationController.containerView;
+    UIWindow *window = menu.view.window ?: container.window;
+    NSMutableArray<UIView *> *views = [NSMutableArray arrayWithObject:menu.view];
+    // The menu's own container (its backdrop and platter), never the window or the app's own root view.
+    if (container && container != window && container != window.rootViewController.view) [views addObject:container];
+    for (UIView *view = menu.view.superview; view && view != container && view != window; view = view.superview) {
+        if ([NSStringFromClass(view.class) rangeOfString:@"ContextMenu"].location != NSNotFound) [views addObject:view];
+    }
+    for (UIView *view in views) {
+        view.alpha = hidden ? 0 : 1;
+        view.userInteractionEnabled = !hidden;
+    }
+}
+
+static void finishSilent(BOOL ok) {
+    void (^done)(BOOL) = sSilentDone;
+    sSilent = (FZRSilentState){0};
+    sSilentLabels = nil;
+    sSilentDone = nil;
+    if (done) done(ok);
+}
+
+static void closeMenu(UIViewController *menu, UIWindow *window, CGPoint point) {
+    for (UIView *view = [window hitTest:point withEvent:nil]; view && view != window; view = view.superview) {
+        for (id<UIInteraction> interaction in view.interactions) {
+            if ([interaction isKindOfClass:UIContextMenuInteraction.class]) [(UIContextMenuInteraction *)interaction dismissMenu];
+        }
+    }
+    if (menu.presentingViewController && !menu.isBeingDismissed) [menu dismissViewControllerAnimated:NO completion:nil];
+}
+
+static void pickFromSilentMenu(NSUInteger tries) {
+    if (!sSilent.active) return;
+    UIViewController *menu = sSilentMenu;
+    UIWindow *window = sSilent.window;
+    CGPoint point = sSilent.point;
+    if (FZRPerformMenuAction(window, point, sSilentLabels)) {
+        FZLog("redesign: menu item performed through an unseen menu (try %lu)", (unsigned long)tries);
+        closeMenu(menu, window, point);
+        finishSilent(YES);
+        return;
+    }
+    if (tries < 20) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.03 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ pickFromSilentMenu(tries + 1); });
+        return;
+    }
+    // Nothing to perform: the menu is shown after all, so the user can pick from it.
+    FZLogError("redesign: no %@ in NaviMus's menu; showing it", [sSilentLabels componentsJoinedByString:@"/"]);
+    if (menu) setMenuHidden(menu, NO);
+    finishSilent(NO);
+}
+
+static void fz_menuWillAppear(UIViewController *self, SEL _cmd, BOOL animated) {
+    if (sSilent.active && isContextMenu(self)) {
+        sSilentMenu = self;
+        setMenuHidden(self, YES);
+    }
+    ((void (*)(id, SEL, BOOL))fz_origMenuWillAppear)(self, _cmd, animated);
+}
+
+static void fz_menuDidAppear(UIViewController *self, SEL _cmd, BOOL animated) {
+    ((void (*)(id, SEL, BOOL))fz_origMenuDidAppear)(self, _cmd, animated);
+    if (!sSilent.active || !isContextMenu(self) || sSilent.appeared) return;
+    sSilent.appeared = YES;
+    sSilentMenu = self;
+    setMenuHidden(self, YES);   // again: the menu's own animator may have set its alpha
+    pickFromSilentMenu(0);
+}
+
+static BOOL installSilentMenus(void) {
+    static BOOL installed;
+    if (installed) return YES;
+    BOOL will = FZHookInstanceMethod(UIViewController.class, @selector(viewWillAppear:), "v@:B", (IMP)fz_menuWillAppear,
+                                     &fz_origMenuWillAppear, "redesign.menu.willAppear");
+    BOOL did = will && FZHookInstanceMethod(UIViewController.class, @selector(viewDidAppear:), "v@:B", (IMP)fz_menuDidAppear,
+                                            &fz_origMenuDidAppear, "redesign.menu.didAppear");
+    installed = will && did;
+    return installed;
+}
+
+void FZRPerformMenuActionUnseen(UIWindow *window, CGPoint point, NSArray<NSString *> *labels, void (^completion)(BOOL ok)) {
+    if (FZRPerformMenuAction(window, point, labels)) { completion(YES); return; }
+    if (sSilent.active || !installSilentMenus()) { completion(NO); return; }
+    sSilent = (FZRSilentState){.active = YES, .window = window, .point = point};
+    sSilentLabels = [labels copy];
+    sSilentDone = [completion copy];
+    if (!FZRTap(window, point)) { finishSilent(NO); return; }
+    // The menu shows within ~50 ms (device log); if it never does, give up rather than hide a later one.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (sSilent.active && !sSilent.appeared) {
+            FZLogError("redesign: NaviMus's menu didn't open");
+            finishSilent(NO);
+        }
+    });
+}
+
 #pragma mark - NaviMus's navigation bar under a rebuilt page
 
 static IMP fz_origBarLayout;
