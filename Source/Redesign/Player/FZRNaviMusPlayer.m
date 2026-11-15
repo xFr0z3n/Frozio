@@ -1,9 +1,9 @@
 // NaviMus's own mini player and player under Frozio's (see FZRPlayer.h).
 //
-// iOS 17 (device probe, build 33): each tab's hosting view carries a `SwiftUI._UIInheritedView` band from 692 to
-// the bottom of an 844 pt screen, under the 83 pt tab bar: NaviMus's mini player, which grows into its player.
-// It's hidden the way NaviMus's navigation bar is under a rebuilt page: an empty layer mask (still laid out and
-// still in accessibility, so its controls can be pressed) and no touches.
+// iOS 17: each tab's hosting view carries a `SwiftUI._UIInheritedView` band from 692 to the bottom of an 844 pt
+// screen, under the 83 pt tab bar (device probe, build 33): NaviMus's backdrop. Its visible card is drawn in the
+// root hosting view over the tabs (build 40). Both are hidden the way NaviMus's navigation bar is under a rebuilt
+// page: a layer mask (still laid out and in accessibility, so their controls can be pressed) and no touches.
 #import <objc/runtime.h>
 #import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/FZRNaviMusControls.h"
@@ -25,14 +25,31 @@ static BOOL isBandClass(UIView *view) {
         || [name rangeOfString:@"TabAccessory"].location != NSNotFound;
 }
 
-UIView *FZRNaviMusMiniBand(UITabBarController *tabs) {
+static BOOL isSwiftUIClass(UIView *view) {
+    NSString *name = NSStringFromClass(view.class);
+    return [name rangeOfString:@"SwiftUI"].location != NSNotFound || isBandClass(view);
+}
+
+// The view the tab bar controller sits in: NaviMus's root hosting view (its RootModifier), where NaviMus draws its
+// visible mini player card over the tabs (device, build 40: the card covered Frozio's bar in the tabs' view).
+static UIView *hostOf(UITabBarController *tabs) {
+    UIView *host = tabs.parentViewController.view;
+    return host && [tabs.view isDescendantOfView:host] ? host : tabs.view;
+}
+
+static CGFloat tabTopIn(UITabBarController *tabs, UIView *view) {
+    UITabBar *bar = tabs.tabBar;
+    if (!bar.window || bar.hidden || bar.alpha < 0.01) return view.bounds.size.height;
+    return CGRectGetMinY([bar convertRect:bar.bounds toView:view]);
+}
+
+// NaviMus's backdrop band in the selected tab (iOS 17: `_UIInheritedView`, 692 to the bottom, under the tab bar).
+static UIView *contentBand(UITabBarController *tabs) {
     UIView *root = tabs.view;
     UIView *content = tabs.selectedViewController.view;
     if (!root || !content) return nil;
     CGFloat height = root.bounds.size.height;
-    // It reaches the bottom (NaviMus, under its tab bar) or at least the tab bar's top.
-    CGFloat reach = height - 1;
-    if (tabs.tabBar.window && !tabs.tabBar.hidden) reach = MIN(reach, CGRectGetMinY([tabs.tabBar convertRect:tabs.tabBar.bounds toView:root]) - 1);
+    CGFloat reach = MIN(height - 1, tabTopIn(tabs, root) - 1);
     // Breadth first, so the outermost band wins (NaviMus nests two of the same frame).
     NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:content];
     NSMutableArray<NSNumber *> *depths = [NSMutableArray arrayWithObject:@0];
@@ -54,40 +71,113 @@ UIView *FZRNaviMusMiniBand(UITabBarController *tabs) {
             [depths addObject:@(depth + 1)];
         }
     }
-#ifdef FROZIO_DEBUG
-    // Once per tab: what is there instead, for the next build.
-    // Up to three times, a second apart, while a song is on (SwiftUI may draw the band a moment after it starts).
-    static NSMapTable *logged;
-    static CFTimeInterval last;
-    if (!logged) logged = [NSMapTable weakToStrongObjectsMapTable];
-    NSInteger count = [[logged objectForKey:content] integerValue];
-    if (FZNowPlayingInfo() && count < 3 && CACurrentMediaTime() - last > 1) {
-        [logged setObject:@(count + 1) forKey:content];
-        last = CACurrentMediaTime();
-        NSMutableArray *seen = [NSMutableArray array];
-        NSMutableArray<UIView *> *walk = [NSMutableArray arrayWithObject:content];
-        while (walk.count && seen.count < 60) {
-            UIView *view = walk.firstObject;
-            [walk removeObjectAtIndex:0];
-            CGRect frame = [view convertRect:view.bounds toView:root];
-            if (CGRectGetMaxY(frame) > height - 300 && view != content) {
-                [seen addObject:[NSString stringWithFormat:@"%@ %@", [NSStringFromClass(view.class) substringToIndex:MIN(60, NSStringFromClass(view.class).length)], NSStringFromCGRect(frame)]];
-            }
-            if ([view isKindOfClass:UIScrollView.class]) continue;
-            [walk addObjectsFromArray:view.subviews];
-        }
-        FZLog("player: no mini player band found in %@; bottom views: %@", NSStringFromClass(content.class), [seen componentsJoinedByString:@"; "]);
-    }
-#endif
     return nil;
 }
 
-static void hideBand(UIView *band, BOOL hidden) {
+static void logRootTree(UITabBarController *tabs, UIView *host) {
+#ifdef FROZIO_DEBUG
+    static NSInteger logged;
+    static CFTimeInterval last;
+    if (!FZNowPlayingInfo() || logged >= 4 || CACurrentMediaTime() - last < 2) return;
+    logged++;
+    last = CACurrentMediaTime();
+    CGFloat height = host.bounds.size.height;
+    NSMutableArray *lines = [NSMutableArray array];
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:host];
+    NSMutableArray<NSNumber *> *depths = [NSMutableArray arrayWithObject:@0];
+    while (queue.count && lines.count < 80) {
+        UIView *view = queue.firstObject;
+        NSInteger depth = depths.firstObject.integerValue;
+        [queue removeObjectAtIndex:0];
+        [depths removeObjectAtIndex:0];
+        CGRect frame = [view convertRect:view.bounds toView:host];
+        if (CGRectGetMaxY(frame) > height - 260 || view == host) {
+            NSString *name = NSStringFromClass(view.class);
+            [lines addObject:[NSString stringWithFormat:@"%ld %@ %@%@%@%@", (long)depth, [name substringToIndex:MIN(70, name.length)],
+                              NSStringFromCGRect(frame), view.hidden ? @" hidden" : @"", view.alpha < 1 ? [NSString stringWithFormat:@" a%.2f", view.alpha] : @"",
+                              view == tabs.view ? @" (tabs)" : @""]];
+        }
+        if (view == tabs.view || [view isKindOfClass:UIScrollView.class] || depth >= 7 || [view.accessibilityIdentifier isEqualToString:@"FZRMiniPlayer"]) continue;
+        for (UIView *sub in view.subviews) { [queue addObject:sub]; [depths addObject:@(depth + 1)]; }
+    }
+    FZLog("player: root %@ bottom: %@", NSStringFromClass(host.class), [lines componentsJoinedByString:@" | "]);
+#endif
+}
+
+// NaviMus's visible mini player card (and its player when open): drawn in the root hosting view over the tabs.
+static UIView *rootCard(UITabBarController *tabs) {
+    UIView *host = hostOf(tabs);
+    if (host == tabs.view) return nil;
+    logRootTree(tabs, host);
+    CGFloat width = host.bounds.size.width, height = host.bounds.size.height, tabTop = tabTopIn(tabs, host);
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithArray:host.subviews];
+    NSMutableArray<NSNumber *> *depths = [NSMutableArray array];
+    for (NSUInteger i = 0; i < queue.count; i++) [depths addObject:@1];
+    while (queue.count) {
+        UIView *view = queue.firstObject;
+        NSInteger depth = depths.firstObject.integerValue;
+        [queue removeObjectAtIndex:0];
+        [depths removeObjectAtIndex:0];
+        if (view == tabs.view || [view.accessibilityIdentifier isEqualToString:@"FZRMiniPlayer"] || [view isKindOfClass:UIScrollView.class]) continue;
+        BOOL ancestor = [tabs.view isDescendantOfView:view];
+        if (!ancestor && isSwiftUIClass(view) && !view.hidden) {
+            CGRect frame = [view convertRect:view.bounds toView:host];
+            BOOL wide = frame.size.width >= width * 0.8;
+            BOOL mini = frame.size.height >= 40 && frame.size.height <= kOpenHeight && CGRectGetMinY(frame) > height / 2
+                && CGRectGetMinY(frame) < tabTop && CGRectGetMaxY(frame) >= tabTop - 24;
+            BOOL open = isBandClass(view) && frame.size.height > kOpenHeight;
+            if (wide && (mini || open)) return view;
+        }
+        if (depth >= 6) continue;
+        for (UIView *sub in view.subviews) { [queue addObject:sub]; [depths addObject:@(depth + 1)]; }
+    }
+    return nil;
+}
+
+// SwiftUI may draw the card's contents as loose siblings of its background (harness): every other NaviMus view in
+// the root view that lies within the card goes with it, so nothing shows through Frozio's translucent bar.
+static NSArray<UIView *> *cardCompanions(UITabBarController *tabs, UIView *card) {
+    UIView *host = hostOf(tabs);
+    if (!card || host == tabs.view) return @[];
+    CGRect area = CGRectInset([card convertRect:card.bounds toView:host], -4, -4);
+    NSMutableArray<UIView *> *found = [NSMutableArray array];
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithArray:host.subviews];
+    while (queue.count) {
+        UIView *view = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if (view == card || view == tabs.view || [view.accessibilityIdentifier isEqualToString:@"FZRMiniPlayer"]) continue;
+        if ([view isDescendantOfView:card] || [view isKindOfClass:UIScrollView.class]) continue;
+        BOOL ancestor = [tabs.view isDescendantOfView:view] || [card isDescendantOfView:view];
+        if (!ancestor && isSwiftUIClass(view) && CGRectContainsRect(area, [view convertRect:view.bounds toView:host])) {
+            [found addObject:view];
+            continue;
+        }
+        if (ancestor) [queue addObjectsFromArray:view.subviews];
+    }
+    return found;
+}
+
+UIView *FZRNaviMusMiniBand(UITabBarController *tabs) {
+    return rootCard(tabs) ?: contentBand(tabs);
+}
+
+// `from`: the band is hidden above this y (its own coordinates) and left as it is below, where NaviMus's backdrop
+// behind the tab bar lies (hiding all of it left the tab bar see-through on device, build 40). 0 hides all of it.
+static void hideBand(UIView *band, BOOL hidden, CGFloat from) {
     if (!band) return;
     if (hidden) {
-        CALayer *mask = [CALayer layer];
-        mask.frame = CGRectZero;
+        CGRect keep = from > 0 && from < band.bounds.size.height
+            ? CGRectMake(0, from, band.bounds.size.width, band.bounds.size.height - from) : CGRectZero;
+        CALayer *mask = band.layer.mask;
+        if (!mask || !objc_getAssociatedObject(band, &kBandHiddenKey)) {
+            mask = [CALayer layer];
+            mask.backgroundColor = UIColor.blackColor.CGColor;
+        }
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        mask.frame = keep;
         band.layer.mask = mask;
+        [CATransaction commit];
         band.userInteractionEnabled = NO;
         objc_setAssociatedObject(band, &kBandHiddenKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         if (!sHiddenBands) sHiddenBands = [NSHashTable weakObjectsHashTable];
@@ -102,16 +192,26 @@ static void hideBand(UIView *band, BOOL hidden) {
 
 void FZRSetNaviMusMiniHidden(UITabBarController *tabs, BOOL hidden) {
     if (sShown || sBusy) return;   // NaviMus's player is in use; it's hidden again when that ends
-    UIView *band = FZRNaviMusMiniBand(tabs);
-    if (hidden) {
-        if (band && !objc_getAssociatedObject(band, &kBandHiddenKey)) {
-            FZLog("player: NaviMus's mini player hidden (%@ %@)", NSStringFromClass(band.class),
-                  NSStringFromCGRect([band convertRect:band.bounds toView:tabs.view]));
-        }
-        hideBand(band, YES);
+    if (!hidden) {
+        for (UIView *view in sHiddenBands.allObjects) hideBand(view, NO, 0);
         return;
     }
-    for (UIView *view in sHiddenBands.allObjects) hideBand(view, NO);
+    UIView *card = rootCard(tabs), *band = contentBand(tabs);
+    NSMutableArray *views = [NSMutableArray array];
+    if (card) [views addObject:card];
+    if (band) [views addObject:band];
+    for (UIView *companion in cardCompanions(tabs, card)) {
+        if (!objc_getAssociatedObject(companion, &kBandHiddenKey)) hideBand(companion, YES, 0);
+    }
+    for (UIView *view in views) {
+        if (!objc_getAssociatedObject(view, &kBandHiddenKey)) {
+            FZLog("player: NaviMus's %@ hidden (%@ %@)", view == card ? @"mini player card" : @"mini player band", NSStringFromClass(view.class),
+                  NSStringFromCGRect([view convertRect:view.bounds toView:hostOf(tabs)]));
+        }
+        // The card all of it; the band down to the tab bar, which keeps NaviMus's backdrop.
+        CGFloat from = view == band ? tabTopIn(tabs, view) : 0;
+        hideBand(view, YES, from);
+    }
 }
 
 BOOL FZRNaviMusPlayerShown(void) { return sShown; }
@@ -127,10 +227,9 @@ static BOOL isOpen(UITabBarController *tabs, UIView *band) {
 static CGPoint miniPoint(UITabBarController *tabs, UIView *band) {
     UIWindow *window = tabs.view.window;
     CGRect frame = [band convertRect:band.bounds toView:window];
-    CGRect bar = [tabs.tabBar convertRect:tabs.tabBar.bounds toView:window];
     // The mini player is the band's top: down to the tab bar on device (69 pt), at most 80 pt.
-    CGFloat mini = CGRectGetMinY(bar) - CGRectGetMinY(frame);
-    if (tabs.tabBar.hidden || mini < 30) mini = 64;
+    CGFloat mini = tabTopIn(tabs, window) - CGRectGetMinY(frame);
+    if (mini < 30) mini = 64;
     mini = MIN(MIN(mini, 80), frame.size.height);
     return CGPointMake(CGRectGetMinX(frame) + frame.size.width * 0.35, CGRectGetMinY(frame) + mini / 2);
 }
@@ -149,7 +248,7 @@ static NSArray *bandElements(UITabBarController *tabs, UIView *band) {
     UIWindow *window = tabs.view.window;
     CGRect frame = [band convertRect:band.bounds toView:window];
     NSMutableArray *elements = [NSMutableArray array];
-    for (id element in FZRAccessibilityElementsIn(tabs.selectedViewController.view)) {
+    for (id element in FZRAccessibilityElementsIn(hostOf(tabs))) {
         CGRect screen = [element accessibilityFrame];
         CGRect inWindow = [window convertRect:screen fromCoordinateSpace:window.screen.coordinateSpace];
         CGPoint center = CGPointMake(CGRectGetMidX(inWindow), CGRectGetMidY(inWindow));
@@ -189,8 +288,8 @@ void FZRShowNaviMusPlayer(UITabBarController *tabs, UIView *frozioBar) {
         FZLogError("player: NaviMus's player can't be shown (band %d window %d busy %d)", band != nil, window != nil, sShown || sBusy);
         return;
     }
+    for (UIView *view in sHiddenBands.allObjects) hideBand(view, NO, 0);
     sShown = YES;
-    hideBand(band, NO);
     frozioBar.hidden = YES;
     BOOL tapped = FZRTapIn(tabs.view, miniPoint(tabs, band));
     FZLog("player: showing NaviMus's player (tap %d)", tapped);
@@ -259,11 +358,23 @@ static void finishAction(UITabBarController *tabs, UIView *frozioBar, BOOL ok, N
     sBusy = NO;
     frozioBar.userInteractionEnabled = YES;
     passThroughFrozio(tabs, NO);
-    if (band) hideBand(band, YES);
+    if (band && FZRPlayerActive()) FZRSetNaviMusMiniHidden(tabs, YES);
+    // The unseen player and menu leave UIKit's status bar hidden until something asks again (harness).
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        for (UIViewController *vc = window.rootViewController; vc; vc = vc.presentedViewController) [vc setNeedsStatusBarAppearanceUpdate];
+    });
     completion(ok, why);
 }
 
+static void runPlayerAction(UITabBarController *tabs, UIView *frozioBar, NSArray<NSString *> *labels, void (^completion)(BOOL, NSString *));
+
+// Started on the next turn of the run loop: a button calls this from inside UIKit's delivery of the user's own touch,
+// and Frozio's taps share UIKit's touch event, which left the next real touch going to NaviMus (harness).
 void FZRNaviMusPlayerAction(UITabBarController *tabs, UIView *frozioBar, NSArray<NSString *> *labels, void (^completion)(BOOL, NSString *)) {
+    dispatch_async(dispatch_get_main_queue(), ^{ runPlayerAction(tabs, frozioBar, labels, completion); });
+}
+
+static void runPlayerAction(UITabBarController *tabs, UIView *frozioBar, NSArray<NSString *> *labels, void (^completion)(BOOL, NSString *)) {
     UIView *band = FZRNaviMusMiniBand(tabs);
     UIWindow *window = tabs.view.window;
     if (!band || !window) { completion(NO, @"NaviMus's mini player wasn't found."); return; }
@@ -285,9 +396,10 @@ void FZRNaviMusPlayerAction(UITabBarController *tabs, UIView *frozioBar, NSArray
         // Held here: `step = nil` below releases this block and what it captured.
         void (^done)(BOOL, NSString *) = completion;
         NSArray<NSString *> *wanted = labels;
+        UIView *bar = weakBar;
         UITabBarController *tabs = weakTabs;
         UIView *band = FZRNaviMusMiniBand(tabs);
-        if (!tabs || !band) { sBusy = NO; weakBar.userInteractionEnabled = YES; passThroughFrozio(nil, NO); done(NO, @"NaviMus's player went away."); step = nil; return; }
+        if (!tabs || !band) { sBusy = NO; bar.userInteractionEnabled = YES; passThroughFrozio(nil, NO); done(NO, @"NaviMus's player went away."); step = nil; return; }
         tries++;
         BOOL open = isOpen(tabs, band);
         if (open) openTicks++;
@@ -300,7 +412,7 @@ void FZRNaviMusPlayerAction(UITabBarController *tabs, UIView *frozioBar, NSArray
                 BOOL pressed = press(tabs.view.window, direct);
                 FZLog("player: NaviMus's %@ pressed=%d", FZRDescribeElement(direct), pressed);
                 step = nil;
-                finishAction(tabs, weakBar, pressed, pressed ? nil : @"NaviMus's control refused the press.", done);
+                finishAction(tabs, bar, pressed, pressed ? nil : @"NaviMus's control refused the press.", done);
                 return;
             }
             id more = buttonLabelled(elements, @[@"More", @"More Options", @"Options", @"ellipsis", @"Menu", @"Song Menu"]);
@@ -309,18 +421,18 @@ void FZRNaviMusPlayerAction(UITabBarController *tabs, UIView *frozioBar, NSArray
                 FZLog("player: NaviMus's player menu at %@", NSStringFromCGPoint(point));
                 step = nil;
                 FZRPerformMenuActionUnseen(tabs.view.window, point, wanted, ^(BOOL ok) {
-                    finishAction(tabs, weakBar, ok, ok ? nil : @"NaviMus's player menu has no Download item.", done);
+                    finishAction(tabs, bar, ok, ok ? nil : @"NaviMus's player menu has no Download item.", done);
                 });
                 return;
             }
             step = nil;
-            finishAction(tabs, weakBar, NO, @"NaviMus's player has no Download control or menu.", done);
+            finishAction(tabs, bar, NO, @"NaviMus's player has no Download control or menu.", done);
             return;
         }
         if (tries > 30) {
             step = nil;
             FZLogError("player: NaviMus's player didn't open (band %@)", NSStringFromCGRect(band.frame));
-            finishAction(tabs, weakBar, NO, @"NaviMus's player didn't open.", done);
+            finishAction(tabs, bar, NO, @"NaviMus's player didn't open.", done);
             return;
         }
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (step) step(); });

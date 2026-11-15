@@ -54,6 +54,7 @@ Every borrowed file or block carries a header comment `// Adapted from <repo>/<p
 | `Source/Redesign/Kit/FZRRoundButton.h`, `.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRActionRow.m`, `Kit/SGRGlass.m` @ fe3211c (moved out of the album page) | GPL-3.0 |
 | `Source/Redesign/Player/FZRMiniPlayer.m` | `taurus/tweak/Sources/Redesigned/NowPlayingBar/NowPlayingBar.x` @ fe3211c (card radius, glass, progress line values; rebuilt as Frozio's own bar) | GPL-3.0 |
 | `Source/Redesign/Player/FZRPlayer.m` | `taurus/tweak/Sources/Redesigned/Player/PlayerHeader.x`, `PlayerArtwork.x`, `PlayerControls.x`, `PlayerFooter.x`, `PlayerField.x`, `PlayerLyrics.x` @ fe3211c (layout values and structure; rebuilt as a standalone player for NaviMus) | GPL-3.0 |
+| `Source/Redesign/FZRBarButtons.m` | `taurus/tweak/Sources/Redesigned/Player/PlayerHeader.x`, `Kit/SGRGlass.m` @ fe3211c (the 44 pt round glass behind top bar buttons) | GPL-3.0 |
 
 ## Build-time tools (not shipped)
 

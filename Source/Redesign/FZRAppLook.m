@@ -51,6 +51,10 @@ static void fz_setTabBarTint(UITabBar *self, SEL _cmd, UIColor *tint) {
     ((void (*)(id, SEL, UIColor *))fz_origSetBarTint)(self, _cmd, FZRAccent());
 }
 
+static UITabBarAppearance *sTabLook;
+
+UITabBarAppearance *FZRTabBarLook(void) { return sTabLook; }
+
 static void styleTabBar(void) {
     UITabBar *proxy = [UITabBar appearance];
     proxy.tintColor = FZRAccent();
@@ -70,6 +74,7 @@ static void styleTabBar(void) {
     }
     proxy.standardAppearance = look;
     proxy.scrollEdgeAppearance = look;
+    sTabLook = look;
 }
 
 static void styleNavigationBar(void) {

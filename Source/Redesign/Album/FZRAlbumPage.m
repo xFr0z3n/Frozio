@@ -9,6 +9,7 @@
 #import "Redesign/Kit/FZRGlass.h"
 #import "Redesign/Kit/FZRRoundButton.h"
 #import "Redesign/Player/FZRPlayer.h"
+#import "Redesign/FZRBarButtons.h"
 #import "Redesign/FZRNaviMusControls.h"
 #import "Redesign/FZRTap.h"
 #import "Settings/Kit/FZModPage.h"
@@ -734,7 +735,11 @@ UIViewController *FZRRedesignOptionsPage(void) {
     FZModRow *shuffle = FZWithSymbol(FZSwitchRow(@"Shuffle button", nil, FZRKeyAlbumShuffle), @"shuffle");
     FZModRow *download = FZWithSymbol(FZSwitchRow(@"Download button", @"In place of chroma.pw's +.", FZRKeyAlbumDownload), @"arrow.down.circle");
     FZModRow *meta = FZWithSymbol(FZSwitchRow(@"Genre, type and year", nil, FZRKeyAlbumMeta), @"text.alignleft");
-    NSMutableArray *sections = [NSMutableArray arrayWithArray:FZRPlayerOptionSections()];
+    FZModRow *barCircles = FZWithSymbol(FZSwitchRow(@"Glass circles behind bar buttons", @"Back, ⋯ and NaviMus's other bar buttons. Before iOS 26.", FZRKeyBarCircles), @"circle");
+    FZModRow *barWhite = FZWithSymbol(FZSwitchRow(@"White bar buttons", @"Off keeps NaviMus's tint.", FZRKeyBarWhite), @"paintbrush");
+    FZModRow *bareBack = FZWithSymbol(FZSwitchRow(@"Back without the page's name", nil, FZRKeyBarBareBack), @"chevron.left");
+    NSMutableArray *sections = [NSMutableArray arrayWithObject:FZNotedSection(@"Bars", @[barCircles, barWhite, bareBack], @"NaviMus's own pages, everywhere in the app.")];
+    [sections addObjectsFromArray:FZRPlayerOptionSections()];
     [sections addObjectsFromArray:@[
         FZNotedSection(@"Buttons", @[circleBack, circleMore, circleActions], @"Off leaves only the icon."),
         FZNotedSection(@"Album", @[shuffle, download, meta], @"Changes show the next time a page opens."),

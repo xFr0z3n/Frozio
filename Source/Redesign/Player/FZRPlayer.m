@@ -33,8 +33,8 @@ NSString *const FZRKeyPlayerMore = @"fz.redesign.player.more";
 NSString *const FZRKeyPlayerShrink = @"fz.redesign.player.shrink";
 NSString *const FZRKeyPlayerTimes = @"fz.redesign.player.times";
 
-static const CGFloat kSide = 24, kHeaderTop = 4, kCircle = 44, kPlayCircle = 68, kSkipGlyph = 32, kSmallGlyph = 22;
-static const CGFloat kPausedScale = 0.84, kPausedScaleReduced = 0.92, kFooterAbove = 20, kFooterMinBottom = 34;
+static const CGFloat kSide = 24, kHeaderTop = 4, kCircle = 44, kSkipGlyph = 32, kSmallGlyph = 24;
+static const CGFloat kPausedScale = 0.84, kPausedScaleReduced = 0.92, kFooterMinBottom = 34;
 
 static NSString *string(id value) { return [value isKindOfClass:NSString.class] && [value length] ? value : nil; }
 
@@ -128,7 +128,7 @@ static UIMenu *sleepMenu(void) {
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
     _track = [UIView new];
-    _track.backgroundColor = [UIColor colorWithWhite:1 alpha:0.24];
+    _track.backgroundColor = [UIColor colorWithWhite:1 alpha:0.22];
     _track.userInteractionEnabled = NO;
     _fill = [UIView new];
     _fill.backgroundColor = UIColor.whiteColor;
@@ -149,13 +149,15 @@ static UIMenu *sleepMenu(void) {
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGRect b = self.bounds;
-    CGFloat thickness = _scrubbing ? 6 : 4, thumb = _scrubbing ? 18 : 12;
+    // chroma.pw: a 4 pt line with no knob; touched, it thickens and a knob shows.
+    CGFloat thickness = _scrubbing ? 6 : 4, thumb = _scrubbing ? 16 : 0;
     CGFloat y = round(b.size.height / 2 - thickness / 2);
     _track.frame = CGRectMake(0, y, b.size.width, thickness);
     _fill.frame = CGRectMake(0, y, b.size.width * _value, thickness);
     _track.layer.cornerRadius = _fill.layer.cornerRadius = thickness / 2;
     _thumb.bounds = CGRectMake(0, 0, thumb, thumb);
     _thumb.layer.cornerRadius = thumb / 2;
+    _thumb.hidden = thumb <= 0;
     _thumb.center = CGPointMake(MIN(MAX(thumb / 2, b.size.width * _value), b.size.width - thumb / 2), b.size.height / 2);
 }
 - (void)follow:(UITouch *)touch {
@@ -269,30 +271,39 @@ static UIMenu *sleepMenu(void) {
 
 #pragma mark - the player
 
+NSString *const FZRKeyPlayerBackground = @"fz.redesign.player.background";   // 0 blurred cover, 1 colours, 2 fluid, 3 fill
+NSString *const FZRKeyPlayerRightSlot = @"fz.redesign.player.rightSlot";     // right of next: 0 sleep timer, 1 repeat
+
+// Measured on chroma.pw's player (the user's screenshot, 390 × 844): ⌄ and ⋯ in 44 pt glass circles centred 71 pt
+// down, the album name between them; the cover 24 pt from the sides with its top 84 pt under the header's centre;
+// the title Title 1 bold, the explicit badge and artist Body under it, + (download here) at the right; the 4 pt
+// scrubber 62 pt over the controls; shuffle, previous, a bare 44 pt play/pause glyph, next and the sleep timer
+// centred at 36, 112, 195, 278 and 354 pt; lyrics, AirPlay and queue at 20 %, 50 % and 80 % of the width, centred
+// 22 pt above the 34 pt bottom inset.
+static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAboveControls = 62, kSkipOffset = 83;
+
 @interface FZRPlayerViewController : UIViewController <UIScrollViewDelegate, UIGestureRecognizerDelegate>
 @end
 
 @implementation FZRPlayerViewController {
     FZRArtworkField *_field;
     FZRRoundButton *_close, *_more;
-    UILabel *_contextTop, *_contextName;
+    UILabel *_contextName;
     UIView *_plate;
     UIImageView *_cover;
     FZRLyricsView *_lyrics;
-    UILabel *_title, *_artist;
+    UILabel *_title, *_artist, *_explicitBadge;
     FZRRoundButton *_download;
     FZRScrubber *_scrubber;
     UILabel *_elapsed, *_remaining;
-    FZRRoundButton *_shuffle, *_previous, *_next, *_repeat;
-    UIControl *_play;
-    UIImageView *_playGlyph;
+    FZRRoundButton *_shuffle, *_previous, *_next, *_play, *_slot;
+    UIView *_shuffleDot;
     AVRoutePickerView *_route;
-    FZRRoundButton *_sleep, *_lyricsButton, *_queue;
+    FZRRoundButton *_lyricsButton, *_queue;
     NSTimer *_timer;
     NSString *_coverSong, *_downloadedSong;
     BOOL _lyricsOpen, _shuffleOn;
     NSInteger _repeatMode;   // 0 off, 1 all, 2 one
-    CGRect _coverFrame;
 }
 
 - (instancetype)init {
@@ -325,6 +336,14 @@ static UIMenu *sleepMenu(void) {
     return label;
 }
 
+- (void)applyBackground {
+    NSInteger kind = FZInt(FZRKeyPlayerBackground, 0);
+    _field.showsBackdrop = YES;   // the cover blurred behind everything, as chroma.pw's player
+    _field.flows = kind == 1;
+    _field.fluid = kind == 2;
+    _field.fills = kind == 3;
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     UIView *view = self.view;
@@ -332,16 +351,15 @@ static UIMenu *sleepMenu(void) {
     view.clipsToBounds = YES;
     _field = [[FZRArtworkField alloc] initWithFrame:view.bounds];
     _field.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _field.bleed = UIEdgeInsetsMake(200, 0, 600, 0);
+    [self applyBackground];
     [view addSubview:_field];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(fieldColored:) name:FZRFieldColorDidChangeNotification object:_field];
 
-    _close = [self button:@"chevron.down" size:19 label:@"Close" action:@selector(closePlayer)];
+    _close = [self button:@"chevron.down" size:20 label:@"Close" action:@selector(closePlayer)];
     _close.circled = YES;
-    _more = [self button:@"ellipsis" size:19 label:@"More" action:nil];
+    _more = [self button:@"ellipsis" size:20 label:@"More" action:nil];
     _more.circled = YES;
-    _contextTop = [self label:UIFontTextStyleCaption2 weight:UIFontWeightSemibold color:FZRSecondary()];
-    _contextTop.textAlignment = NSTextAlignmentCenter;
-    _contextName = [self label:UIFontTextStyleFootnote weight:UIFontWeightBold color:FZRPrimary()];
+    _contextName = [self label:UIFontTextStyleHeadline weight:UIFontWeightSemibold color:FZRPrimary()];
     _contextName.textAlignment = NSTextAlignmentCenter;
 
     // The shadow plate: a rounded rect under the cover carrying its shadow (shadow.artwork).
@@ -350,7 +368,6 @@ static UIMenu *sleepMenu(void) {
     _plate.layer.shadowOpacity = 0.45;
     _plate.layer.shadowRadius = 32;
     _plate.layer.shadowOffset = CGSizeMake(0, 12);
-    _plate.userInteractionEnabled = NO;
     [view addSubview:_plate];
     _cover = [UIImageView new];
     _cover.contentMode = UIViewContentModeScaleAspectFill;
@@ -367,43 +384,42 @@ static UIMenu *sleepMenu(void) {
     _lyrics.seek = ^(NSTimeInterval seconds) { [weakSelf seekTo:seconds]; };
     [view addSubview:_lyrics];
 
-    _title = [self label:UIFontTextStyleTitle2 weight:UIFontWeightBold color:FZRPrimary()];
+    _title = [self label:UIFontTextStyleTitle1 weight:UIFontWeightBold color:FZRPrimary()];
     _artist = [self label:UIFontTextStyleBody weight:UIFontWeightRegular color:FZRSecondary()];
-    _download = [self button:@"arrow.down.circle" size:26 label:@"Download" action:@selector(download)];
+    // The explicit badge: a small rounded "E" in the secondary white before the artist.
+    _explicitBadge = [self label:UIFontTextStyleCaption2 weight:UIFontWeightBold color:UIColor.blackColor];
+    _explicitBadge.text = @"E";
+    _explicitBadge.textAlignment = NSTextAlignmentCenter;
+    _explicitBadge.backgroundColor = FZRTertiary();
+    _explicitBadge.layer.cornerRadius = 3;
+    _explicitBadge.layer.masksToBounds = YES;
+    _download = [self button:@"arrow.down.circle" size:30 label:@"Download" action:@selector(download)];
 
     _scrubber = [FZRScrubber new];
     [_scrubber addTarget:self action:@selector(scrubbing) forControlEvents:UIControlEventValueChanged];
     [_scrubber addTarget:self action:@selector(scrubbed) forControlEvents:UIControlEventPrimaryActionTriggered];
     [view addSubview:_scrubber];
-    _elapsed = [self label:UIFontTextStyleCaption1 weight:UIFontWeightMedium color:FZRTertiary()];
-    _remaining = [self label:UIFontTextStyleCaption1 weight:UIFontWeightMedium color:FZRTertiary()];
+    _elapsed = [self label:UIFontTextStyleCaption1 weight:UIFontWeightMedium color:FZRSecondary()];
+    _remaining = [self label:UIFontTextStyleCaption1 weight:UIFontWeightMedium color:FZRSecondary()];
     _elapsed.font = FZRMonospacedDigitsFont(_elapsed.font);
     _remaining.font = FZRMonospacedDigitsFont(_remaining.font);
     _remaining.textAlignment = NSTextAlignmentRight;
 
     _shuffle = [self button:@"shuffle" size:kSmallGlyph label:@"Shuffle" action:@selector(toggleShuffle)];
+    _shuffleDot = [UIView new];
+    _shuffleDot.backgroundColor = FZRAccent();
+    _shuffleDot.layer.cornerRadius = 2;
+    _shuffleDot.userInteractionEnabled = NO;
+    [view addSubview:_shuffleDot];
     _previous = [self button:@"backward.fill" size:kSkipGlyph label:@"Previous" action:@selector(previous)];
+    _play = [self button:@"play.fill" size:44 label:@"Play" action:@selector(playPause)];
     _next = [self button:@"forward.fill" size:kSkipGlyph label:@"Next" action:@selector(next)];
-    _repeat = [self button:@"repeat" size:kSmallGlyph label:@"Repeat" action:@selector(cycleRepeat)];
-    _play = [UIControl new];
-    _play.backgroundColor = UIColor.whiteColor;
-    _play.isAccessibilityElement = YES;
-    _play.accessibilityTraits = UIAccessibilityTraitButton;
-    [_play addTarget:self action:@selector(playPause) forControlEvents:UIControlEventTouchUpInside];
-    [_play addTarget:self action:@selector(pressPlay:) forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
-    [_play addTarget:self action:@selector(releasePlay:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel | UIControlEventTouchDragExit];
-    _playGlyph = [UIImageView new];
-    _playGlyph.contentMode = UIViewContentModeCenter;
-    _playGlyph.tintColor = UIColor.blackColor;
-    [_play addSubview:_playGlyph];
-    [view addSubview:_play];
+    _slot = [self button:@"timer" size:kSmallGlyph label:@"Sleep timer" action:nil];
 
-    _route = [AVRoutePickerView new];
-    _route.tintColor = FZRPrimary();
-    _route.activeTintColor = FZRAccent();
-    [view addSubview:_route];
-    _sleep = [self button:@"moon.zzz" size:kSmallGlyph label:@"Sleep timer" action:nil];
     _lyricsButton = [self button:@"quote.bubble" size:kSmallGlyph label:@"Lyrics" action:@selector(toggleLyrics)];
+    _route = [AVRoutePickerView new];
+    _route.prioritizesVideoDevices = NO;
+    [view addSubview:_route];
     _queue = [self button:@"list.bullet" size:kSmallGlyph label:@"Queue" action:@selector(openQueue)];
 
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragged:)];
@@ -411,14 +427,16 @@ static UIMenu *sleepMenu(void) {
     [view addGestureRecognizer:pan];
     UITapGestureRecognizer *coverTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(playPause)];
     coverTap.numberOfTapsRequired = 2;
-    _plate.userInteractionEnabled = YES;
     [_plate addGestureRecognizer:coverTap];
 
     for (NSNotificationName name in @[FZNowPlayingDidChangeNotification, FZRSleepTimerDidChangeNotification, NSUserDefaultsDidChangeNotification]) {
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:name object:nil];
     }
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(routeChanged) name:AVAudioSessionRouteChangeNotification object:nil];
     [self refresh];
 }
+
+- (void)routeChanged { dispatch_async(dispatch_get_main_queue(), ^{ [self refresh]; }); }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
@@ -436,15 +454,21 @@ static UIMenu *sleepMenu(void) {
 
 #pragma mark state
 
+static BOOL externalRoute(void) {
+    NSString *type = AVAudioSession.sharedInstance.currentRoute.outputs.firstObject.portType;
+    return type && ![type isEqualToString:AVAudioSessionPortBuiltInSpeaker] && ![type isEqualToString:AVAudioSessionPortBuiltInReceiver];
+}
+
 - (void)refresh {
     if (!self.isViewLoaded) return;
     NSDictionary *info = FZNowPlayingInfo();
     _title.text = string(info[MPMediaItemPropertyTitle]) ?: @"Not playing";
     _artist.text = string(info[MPMediaItemPropertyArtist]) ?: string(info[MPMediaItemPropertyAlbumArtist]) ?: @"";
-    NSString *album = string(info[MPMediaItemPropertyAlbumTitle]);
-    _contextTop.text = album ? @"PLAYING FROM ALBUM" : @"";
-    _contextName.text = album ?: @"";
-    _contextTop.hidden = _contextName.hidden = !FZEnabled(FZRKeyPlayerContext);
+    id explicitFlag = info[@"isExplicit"] ?: info[MPMediaItemPropertyIsExplicit];
+    _explicitBadge.hidden = !([explicitFlag respondsToSelector:@selector(boolValue)] && [explicitFlag boolValue]);
+    _contextName.text = string(info[MPMediaItemPropertyAlbumTitle]) ?: @"";
+    _contextName.hidden = !FZEnabled(FZRKeyPlayerContext);
+    [self applyBackground];
 
     NSString *song = FZNowPlayingSongID() ?: _title.text;
     // The check after a download stays with that song.
@@ -468,23 +492,38 @@ static UIMenu *sleepMenu(void) {
     }
 
     BOOL playing = FZNowPlayingIsPlaying();
-    _playGlyph.image = [UIImage systemImageNamed:playing ? @"pause.fill" : @"play.fill"
-        withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:28 weight:UIImageSymbolWeightBold]];
+    [_play setSymbol:playing ? @"pause.fill" : @"play.fill"];
     _play.accessibilityLabel = playing ? @"Pause" : @"Play";
     _shuffle.glyph.tintColor = _shuffleOn ? FZRAccent() : FZRPrimary();
-    [_repeat setSymbol:_repeatMode == 2 ? @"repeat.1" : @"repeat"];
-    _repeat.glyph.tintColor = _repeatMode ? FZRAccent() : FZRPrimary();
-    _sleep.glyph.tintColor = sSleepTimer ? FZRAccent() : FZRPrimary();
-    _sleep.menu = sleepMenu();
+    _shuffleDot.hidden = !_shuffleOn || _shuffle.hidden;
+
+    // Right of next: the sleep timer (chroma.pw's) or repeat.
+    BOOL repeatSlot = FZInt(FZRKeyPlayerRightSlot, 0) == 1;
+    [_slot removeTarget:self action:NULL forControlEvents:UIControlEventTouchUpInside];
+    if (repeatSlot) {
+        [_slot setSymbol:_repeatMode == 2 ? @"repeat.1" : @"repeat"];
+        _slot.glyph.tintColor = _repeatMode ? FZRAccent() : FZRPrimary();
+        _slot.accessibilityLabel = @"Repeat";
+        _slot.menu = nil;
+        [_slot addTarget:self action:@selector(cycleRepeat) forControlEvents:UIControlEventTouchUpInside];
+        _slot.hidden = !FZEnabled(FZRKeyPlayerRepeat);
+    } else {
+        [_slot setSymbol:@"timer"];
+        _slot.glyph.tintColor = sSleepTimer ? FZRAccent() : FZRPrimary();
+        _slot.accessibilityLabel = @"Sleep timer";
+        _slot.menu = sleepMenu();
+        _slot.hidden = !FZEnabled(FZRKeyPlayerSleep);
+    }
     _lyricsButton.glyph.tintColor = _lyricsOpen ? FZRAccent() : FZRPrimary();
     [_lyricsButton setSymbol:_lyricsOpen ? @"quote.bubble.fill" : @"quote.bubble"];
+    _route.tintColor = externalRoute() ? FZRAccent() : FZRPrimary();
+    _route.activeTintColor = FZRAccent();
     _more.menu = [self moreMenu];
 
     _download.hidden = !FZEnabled(FZRKeyPlayerDownload);
     _shuffle.hidden = !FZEnabled(FZRKeyPlayerShuffle);
-    _repeat.hidden = !FZEnabled(FZRKeyPlayerRepeat);
+    _shuffleDot.hidden = _shuffleDot.hidden || _shuffle.hidden;
     _route.hidden = !FZEnabled(FZRKeyPlayerAirPlay);
-    _sleep.hidden = !FZEnabled(FZRKeyPlayerSleep);
     _lyricsButton.hidden = !FZEnabled(FZRKeyPlayerLyrics);
     _queue.hidden = !FZEnabled(FZRKeyPlayerQueue);
     _more.hidden = !FZEnabled(FZRKeyPlayerMore);
@@ -504,11 +543,6 @@ static UIMenu *sleepMenu(void) {
     if (_lyricsOpen) [_lyrics follow:elapsed];
 }
 
-- (void)fieldColored:(NSNotification *)note {
-    UIColor *color = note.userInfo[@"color"];
-    if (color) FZRAnimate(FZRMotionFade, ^{ self->_playGlyph.tintColor = color; }, nil);
-}
-
 - (void)showPaused:(BOOL)paused animated:(BOOL)animated {
     CGFloat scale = paused && FZEnabled(FZRKeyPlayerShrink) && !_lyricsOpen ? (FZRReduceMotion() ? kPausedScaleReduced : kPausedScale) : 1;
     if (CGAffineTransformEqualToTransform(_plate.transform, CGAffineTransformMakeScale(scale, scale))) return;
@@ -518,81 +552,75 @@ static UIMenu *sleepMenu(void) {
 
 #pragma mark layout
 
+static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
+    view.frame = CGRectMake(round(x - side / 2), round(y - side / 2), side, side);
+}
+
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     CGRect b = self.view.bounds;
     UIEdgeInsets safe = self.view.safeAreaInsets;
-    CGFloat width = b.size.width, side = kSide + MAX(safe.left, safe.right);
+    CGFloat width = b.size.width, side = kSide + MAX(safe.left, safe.right), inner = width - 2 * side;
 
-    CGFloat headerY = safe.top + kHeaderTop;
-    _close.frame = CGRectMake(16 + safe.left, headerY, kCircle, kCircle);
-    _more.frame = CGRectMake(width - 16 - safe.right - kCircle, headerY, kCircle, kCircle);
-    CGFloat contextX = CGRectGetMaxX(_close.frame) + 8, contextW = CGRectGetMinX(_more.frame) - 8 - contextX;
-    CGFloat topH = ceil(_contextTop.font.lineHeight), nameH = ceil(_contextName.font.lineHeight);
-    CGFloat contextY = headerY + round((kCircle - topH - nameH) / 2);
-    _contextTop.frame = CGRectMake(contextX, contextY, contextW, topH);
-    _contextName.frame = CGRectMake(contextX, contextY + topH, contextW, nameH);
+    // Header: centred 71 pt down on an iPhone with a 47 pt top inset.
+    CGFloat headerMid = safe.top + kHeaderTop + kCircle / 2 + 2;
+    centre(_close, 16 + safe.left + kCircle / 2, headerMid, kCircle);
+    centre(_more, width - 16 - safe.right - kCircle / 2, headerMid, kCircle);
+    CGFloat contextX = CGRectGetMaxX(_close.frame) + 8;
+    CGFloat nameH = ceil(_contextName.font.lineHeight);
+    _contextName.frame = CGRectMake(contextX, round(headerMid - nameH / 2), CGRectGetMinX(_more.frame) - 8 - contextX, nameH);
 
-    // From the bottom up: footer, controls, times, scrubber, title.
-    CGFloat footerBottom = b.size.height - MAX(safe.bottom + kFooterAbove - 14, kFooterMinBottom);
-    CGFloat footerY = footerBottom - kCircle;
-    NSMutableArray<UIView *> *footerRight = [NSMutableArray array];
-    for (UIView *v in @[_sleep, _lyricsButton, _queue]) if (!v.hidden) [footerRight addObject:v];
-    _route.frame = CGRectMake(side - 8, footerY, kCircle, kCircle);
-    CGFloat x = width - side + 8;
-    for (UIView *v in footerRight.reverseObjectEnumerator) {
-        x -= kCircle;
-        v.frame = CGRectMake(x, footerY, kCircle, kCircle);
-        x -= 12;
-    }
-    BOOL footer = !_route.hidden || footerRight.count;
+    // From the bottom up: footer, controls, times and scrubber, title, then the cover in what's left.
+    CGFloat footerMid = b.size.height - MAX(safe.bottom, kFooterMinBottom) - kCircle / 2;
+    BOOL footer = !_route.hidden || !_lyricsButton.hidden || !_queue.hidden;
+    centre(_lyricsButton, width * 0.2, footerMid, kCircle);
+    centre(_route, width * 0.5, footerMid, kCircle);
+    centre(_queue, width * 0.8, footerMid, kCircle);
 
-    CGFloat controlsY = (footer ? footerY - 20 : footerBottom) - kPlayCircle;
-    CGFloat inner = width - 2 * side;
-    _play.frame = CGRectMake(round((width - kPlayCircle) / 2), controlsY, kPlayCircle, kPlayCircle);
-    _play.layer.cornerRadius = kPlayCircle / 2;
-    _playGlyph.frame = _play.bounds;
-    CGFloat skipW = 56, mid = CGRectGetMidY(_play.frame);
-    CGFloat skipGap = MIN(28, (inner / 2 - kPlayCircle / 2 - skipW - kCircle) / 2 + 12);
-    _previous.frame = CGRectMake(CGRectGetMinX(_play.frame) - skipGap - skipW, mid - skipW / 2, skipW, skipW);
-    _next.frame = CGRectMake(CGRectGetMaxX(_play.frame) + skipGap, mid - skipW / 2, skipW, skipW);
-    _shuffle.frame = CGRectMake(side - 10, mid - kCircle / 2, kCircle, kCircle);
-    _repeat.frame = CGRectMake(width - side + 10 - kCircle, mid - kCircle / 2, kCircle, kCircle);
+    CGFloat controlsMid = footer ? footerMid - kControlsAboveFooter : footerMid;
+    CGFloat mid = width / 2;
+    centre(_play, mid, controlsMid, 72);
+    centre(_previous, mid - kSkipOffset, controlsMid, 60);
+    centre(_next, mid + kSkipOffset, controlsMid, 60);
+    centre(_shuffle, side + 12, controlsMid, kCircle);
+    centre(_slot, width - side - 12, controlsMid, kCircle);
+    _shuffleDot.frame = CGRectMake(round(_shuffle.center.x - 2), round(controlsMid + 16), 4, 4);
 
+    CGFloat timesMid = controlsMid - kTimesAboveControls;
     CGFloat timesH = ceil(_elapsed.font.lineHeight);
-    CGFloat timesY = controlsY - 16 - (_elapsed.hidden ? 0 : timesH);
-    _elapsed.frame = CGRectMake(side, timesY, inner / 2, timesH);
-    _remaining.frame = CGRectMake(side + inner / 2, timesY, inner / 2, timesH);
-    CGFloat scrubH = 28;
-    _scrubber.frame = CGRectMake(side, timesY - scrubH + (_elapsed.hidden ? 0 : 4), inner, scrubH);
+    _elapsed.frame = CGRectMake(side, round(timesMid - timesH / 2), inner / 2, timesH);
+    _remaining.frame = CGRectMake(side + inner / 2, round(timesMid - timesH / 2), inner / 2, timesH);
+    CGFloat scrubMid = timesMid - 15;
+    _scrubber.frame = CGRectMake(side, round(scrubMid - 14), inner, 28);
 
     CGFloat titleH = ceil(_title.font.lineHeight), artistH = ceil(_artist.font.lineHeight);
-    CGFloat titleY = CGRectGetMinY(_scrubber.frame) - 12 - titleH - artistH;
+    CGFloat artistY = round(scrubMid - 26 - artistH);
+    CGFloat titleY = artistY - titleH;
     CGFloat textW = inner - (_download.hidden ? 0 : kCircle + 8);
     _title.frame = CGRectMake(side, titleY, textW, titleH);
-    _artist.frame = CGRectMake(side, titleY + titleH, textW, artistH);
-    _download.frame = CGRectMake(width - side - kCircle + 8, titleY + round((titleH + artistH - kCircle) / 2), kCircle, kCircle);
+    CGFloat badge = _explicitBadge.hidden ? 0 : 16;
+    _explicitBadge.frame = CGRectMake(side, round(artistY + (artistH - badge) / 2), badge, badge);
+    CGFloat artistX = side + (badge ? badge + 8 : 0);
+    _artist.frame = CGRectMake(artistX, artistY, textW - (artistX - side), artistH);
+    centre(_download, width - side - kCircle / 2 + 6, titleY + (titleH + artistH) / 2, kCircle);
 
-    // The cover: as large as fits between the header and the title, centred in that space.
-    CGFloat top = headerY + kCircle + 24, bottom = titleY - 28;
+    // The cover: the full width between the margins with its top 84 pt under the header's centre, smaller only if
+    // the title would meet it.
+    CGFloat top = headerMid + kCoverBelowHeader, bottom = titleY - 24;
     CGFloat coverSide = MAX(0, MIN(inner, bottom - top));
-    CGRect cover = CGRectMake(round((width - coverSide) / 2), top + round((bottom - top - coverSide) / 2), coverSide, coverSide);
+    CGRect cover = CGRectMake(round((width - coverSide) / 2), top, coverSide, coverSide);
     CGAffineTransform transform = _plate.transform;
     _plate.transform = CGAffineTransformIdentity;
     _plate.frame = cover;
     _plate.transform = transform;
     _cover.frame = _plate.bounds;
     _plate.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:_plate.bounds cornerRadius:FZRRadiusArtwork].CGPath;
-    _coverFrame = cover;
-    _lyrics.frame = CGRectMake(side, top - 8, inner, bottom - top + 8);
+    _lyrics.frame = CGRectMake(side, headerMid + kCircle / 2 + 12, inner, bottom - (headerMid + kCircle / 2 + 12));
 }
 
 #pragma mark actions
 
 - (void)closePlayer { [self dismissViewControllerAnimated:YES completion:nil]; }
-
-- (void)pressPlay:(UIControl *)control { FZRAnimate(FZRMotionPress, ^{ control.transform = CGAffineTransformMakeScale(0.92, 0.92); }, nil); }
-- (void)releasePlay:(UIControl *)control { FZRAnimate(FZRMotionPress, ^{ control.transform = CGAffineTransformIdentity; }, nil); }
 
 - (void)playPause {
     MPRemoteCommandCenter *center = MPRemoteCommandCenter.sharedCommandCenter;
@@ -715,6 +743,9 @@ static UIMenu *sleepMenu(void) {
     [now addObject:[UIAction actionWithTitle:@"Lyrics" image:[UIImage systemImageNamed:@"quote.bubble"] identifier:nil
                                      handler:^(UIAction *a) { [weakSelf toggleLyrics]; }]];
     [now addObject:sleepMenu()];
+    NSArray *repeatNames = @[@"Repeat: Off", @"Repeat: All", @"Repeat: One"];
+    [now addObject:[UIAction actionWithTitle:repeatNames[(NSUInteger)_repeatMode] image:[UIImage systemImageNamed:_repeatMode == 2 ? @"repeat.1" : @"repeat"]
+                                  identifier:nil handler:^(UIAction *a) { [weakSelf cycleRepeat]; }]];
     [now addObject:[UIAction actionWithTitle:@"Queue and more in NaviMus's player" image:[UIImage systemImageNamed:@"list.bullet"] identifier:nil
                                      handler:^(UIAction *a) { [weakSelf openNaviMusPlayer]; }]];
     NSMutableArray *coming = [NSMutableArray array];
@@ -789,10 +820,12 @@ NSArray *FZRPlayerOptionSections(void) {
     FZModRow *miniAirPlay = FZWithSymbol(FZOptionRow(@"AirPlay", nil, @"fz.redesign.mini.airplay"), @"airplayaudio");
     FZModRow *miniDownload = FZWithSymbol(FZSwitchRow(@"Download", @"In place of chroma.pw's +.", @"fz.redesign.mini.download"), @"arrow.down.circle");
     FZModRow *miniProgress = FZWithSymbol(FZSwitchRow(@"Progress line", nil, @"fz.redesign.mini.progress"), @"minus");
-    FZModRow *miniRound = FZWithSymbol(FZOptionRow(@"Round cover", nil, @"fz.redesign.mini.roundArtwork"), @"circle");
+    FZModRow *miniRound = FZWithSymbol(FZSwitchRow(@"Round cover", nil, @"fz.redesign.mini.roundArtwork"), @"circle");
     FZModRow *miniSwipe = FZWithSymbol(FZSwitchRow(@"Swipe to change song", nil, @"fz.redesign.mini.swipe"), @"hand.draw");
 
-    FZModRow *context = FZWithSymbol(FZSwitchRow(@"Playing from", nil, FZRKeyPlayerContext), @"text.alignleft");
+    FZModRow *context = FZWithSymbol(FZSwitchRow(@"Album name at the top", nil, FZRKeyPlayerContext), @"text.alignleft");
+    FZModRow *background = FZWithSymbol(FZChoiceRow(@"Background", nil, FZRKeyPlayerBackground, @[@"Blurred cover", @"Colours", @"Fluid", @"Cover"], 0), @"photo");
+    FZModRow *slot = FZWithSymbol(FZChoiceRow(@"Right of next", @"chroma.pw has the sleep timer there.", FZRKeyPlayerRightSlot, @[@"Sleep timer", @"Repeat"], 0), @"timer");
     FZModRow *download = FZWithSymbol(FZSwitchRow(@"Download", @"In place of chroma.pw's +.", FZRKeyPlayerDownload), @"arrow.down.circle");
     FZModRow *shuffle = FZWithSymbol(FZSwitchRow(@"Shuffle", nil, FZRKeyPlayerShuffle), @"shuffle");
     FZModRow *repeat = FZWithSymbol(FZSwitchRow(@"Repeat", nil, FZRKeyPlayerRepeat), @"repeat");
@@ -804,8 +837,8 @@ NSArray *FZRPlayerOptionSections(void) {
     FZModRow *more = FZWithSymbol(FZSwitchRow(@"⋯ menu", nil, FZRKeyPlayerMore), @"ellipsis.circle");
     FZModRow *shrink = FZWithSymbol(FZSwitchRow(@"Smaller cover while paused", nil, FZRKeyPlayerShrink), @"arrow.down.right.and.arrow.up.left");
     return @[
-        FZNotedSection(@"Player", @[rebuilt], @"Applies right away."),
+        FZNotedSection(@"Rebuilt player", @[rebuilt], @"Applies right away."),
         FZSection(@"Mini player", @[miniPlay, miniPrevious, miniNext, miniAirPlay, miniDownload, miniProgress, miniRound, miniSwipe]),
-        FZSection(@"Player buttons", @[context, download, shuffle, repeat, times, airPlay, sleep, lyrics, queue, more, shrink]),
+        FZSection(@"Player", @[background, slot, context, download, shuffle, repeat, times, airPlay, sleep, lyrics, queue, more, shrink]),
     ];
 }

@@ -24,8 +24,11 @@ NSString *const FZRKeyMiniProgress = @"fz.redesign.mini.progress";
 NSString *const FZRKeyMiniRoundArtwork = @"fz.redesign.mini.roundArtwork";
 NSString *const FZRKeyMiniSwipe = @"fz.redesign.mini.swipe";
 
-static const CGFloat kCardHeight = 56, kCardRadius = 24, kCardSide = 8, kCardAboveBar = 8;
-static const CGFloat kArtwork = 40, kInset = 8, kButton = 40, kTextGap = 10;
+// Measured on chroma.pw's mini player (the user's screenshot, 390 pt wide): a 55 pt card 8 pt from the sides, corners
+// about 18 pt, a 40 pt round cover 8 pt in, the text 64 pt in, 44 pt buttons 8 pt from the right edge, and a 2 pt
+// progress line flush along the bottom, clipped by the corners.
+static const CGFloat kCardHeight = 56, kCardRadius = 18, kCardSide = 8, kCardAboveBar = 8;
+static const CGFloat kArtwork = 40, kInset = 8, kButton = 44, kTextGap = 16, kProgress = 2;
 
 static NSArray<NSString *> *downloadLabels(void) {
     return @[@"Download", @"Download Song", @"Download Track", @"Remove Download", @"Delete Download"];
@@ -48,7 +51,7 @@ BOOL FZRPlayerActive(void) {
     if (!(self = [super initWithFrame:frame])) return nil;
     self.userInteractionEnabled = NO;
     _track = [UIView new];
-    _track.backgroundColor = [UIColor colorWithWhite:1 alpha:0.24];
+    _track.backgroundColor = [UIColor colorWithWhite:1 alpha:0.28];
     _fill = [UIView new];
     _fill.backgroundColor = UIColor.whiteColor;
     [self addSubview:_track];
@@ -62,15 +65,38 @@ BOOL FZRPlayerActive(void) {
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGRect b = self.bounds;
+    // Square ends: the card's rounded corners clip the line, so it runs into them seamlessly.
     _track.frame = b;
     _fill.frame = CGRectMake(0, 0, b.size.width * _progress, b.size.height);
-    _track.layer.cornerRadius = _fill.layer.cornerRadius = b.size.height / 2;
 }
 @end
 
 #pragma mark - the bar
 
-@interface FZRMiniBar : UIView
+// The output the sound goes to, shown under the title in the accent as chroma.pw does ("WH-1000XM6" with a
+// Bluetooth glyph); nothing for the phone's own speaker.
+static NSString *routeName(NSString **symbol) {
+    AVAudioSessionPortDescription *output = AVAudioSession.sharedInstance.currentRoute.outputs.firstObject;
+    NSString *type = output.portType;
+    if (!output || [type isEqualToString:AVAudioSessionPortBuiltInSpeaker] || [type isEqualToString:AVAudioSessionPortBuiltInReceiver]) return nil;
+    NSString *glyph = @"hifispeaker";
+    if ([type isEqualToString:AVAudioSessionPortBluetoothA2DP] || [type isEqualToString:AVAudioSessionPortBluetoothHFP]
+        || [type isEqualToString:AVAudioSessionPortBluetoothLE]) glyph = @"headphones";   // SF Symbols has no Bluetooth logo
+    else if ([type isEqualToString:AVAudioSessionPortAirPlay]) glyph = @"airplayaudio";
+    else if ([type isEqualToString:AVAudioSessionPortHeadphones]) glyph = @"headphones";
+    else if ([type isEqualToString:AVAudioSessionPortCarAudio]) glyph = @"car";
+    if (symbol) *symbol = glyph;
+    return output.portName.length ? output.portName : nil;
+}
+
+static UIImage *routeGlyph(NSString *symbol, UIFont *font) {
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithFont:font scale:UIImageSymbolScaleSmall];
+    return [UIImage systemImageNamed:symbol withConfiguration:config];
+}
+
+static void placeBar(UITabBarController *tabs);
+
+@interface FZRMiniBar : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, weak) UITabBarController *tabs;
 - (void)refresh;
 @end
@@ -78,10 +104,10 @@ BOOL FZRPlayerActive(void) {
 @implementation FZRMiniBar {
     UIVisualEffectView *_glass;
     UIView *_content;
-    UIImageView *_artwork;
-    UILabel *_title, *_artist;
+    UIImageView *_artwork, *_routeIcon;
+    UILabel *_title, *_route;
     FZRRoundButton *_download, *_previous, *_play, *_next;
-    AVRoutePickerView *_route;
+    AVRoutePickerView *_airPlay;
     FZRMiniProgress *_progress;
     NSTimer *_timer;
     NSString *_artworkSong;
@@ -104,22 +130,22 @@ static char kBarGlassKey;
     _artwork.layer.cornerCurve = kCACornerCurveContinuous;
     _artwork.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     _title = [UILabel new];
-    _title.font = FZRFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraLarge);
-    _title.textColor = FZRPrimary();
-    _artist = [UILabel new];
-    _artist.font = FZRFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
-    _artist.textColor = FZRSecondary();
-    for (UIView *v in @[_artwork, _title, _artist]) [_content addSubview:v];
+    _title.lineBreakMode = NSLineBreakByTruncatingTail;
+    _route = [UILabel new];
+    _route.font = FZRFont(UIFontTextStyleFootnote, UIFontWeightMedium, UIContentSizeCategoryExtraLarge);
+    _route.textColor = FZRAccent();
+    _routeIcon = [UIImageView new];
+    _routeIcon.tintColor = FZRAccent();
+    _routeIcon.contentMode = UIViewContentModeCenter;
+    for (UIView *v in @[_artwork, _title, _route, _routeIcon]) [_content addSubview:v];
 
-    _download = [self button:@"arrow.down.circle" size:21 label:@"Download" action:@selector(download)];
-    _previous = [self button:@"backward.fill" size:18 label:@"Previous" action:@selector(previous)];
-    _play = [self button:@"play.fill" size:22 label:@"Play" action:@selector(playPause)];
-    _next = [self button:@"forward.fill" size:18 label:@"Next" action:@selector(next)];
-    _route = [AVRoutePickerView new];
-    _route.tintColor = FZRPrimary();
-    _route.activeTintColor = FZRAccent();
-    _route.prioritizesVideoDevices = NO;
-    [_content addSubview:_route];
+    _airPlay = [AVRoutePickerView new];
+    _airPlay.prioritizesVideoDevices = NO;
+    [_content addSubview:_airPlay];
+    _download = [self button:@"arrow.down.circle" size:22 label:@"Download" action:@selector(download)];
+    _previous = [self button:@"backward.fill" size:20 label:@"Previous" action:@selector(previous)];
+    _next = [self button:@"forward.fill" size:20 label:@"Next" action:@selector(next)];
+    _play = [self button:@"play.fill" size:24 label:@"Play" action:@selector(playPause)];
 
     _progress = [FZRMiniProgress new];
     [_content addSubview:_progress];
@@ -134,9 +160,11 @@ static char kBarGlassKey;
     UISwipeGestureRecognizer *right = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(swiped:)];
     right.direction = UISwipeGestureRecognizerDirectionRight;
     for (UIGestureRecognizer *g in @[up, left, right]) [self addGestureRecognizer:g];
+    for (UIGestureRecognizer *g in @[tap, up, left, right]) g.delegate = self;
 
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:FZNowPlayingDidChangeNotification object:nil];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:NSUserDefaultsDidChangeNotification object:nil];
+    for (NSNotificationName name in @[FZNowPlayingDidChangeNotification, NSUserDefaultsDidChangeNotification, AVAudioSessionRouteChangeNotification]) {
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refreshSoon) name:name object:nil];
+    }
     return self;
 }
 
@@ -146,6 +174,14 @@ static char kBarGlassKey;
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     [_content addSubview:button];
     return button;
+}
+
+// The bar's own tap and swipes leave its buttons (and AirPlay's picker) to themselves.
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
+    for (UIView *view = touch.view; view && view != self; view = view.superview) {
+        if ([view isKindOfClass:UIControl.class] || [view isKindOfClass:AVRoutePickerView.class]) return NO;
+    }
+    return YES;
 }
 
 - (void)didMoveToWindow {
@@ -161,16 +197,42 @@ static char kBarGlassKey;
 - (void)tick {
     NSTimeInterval duration = FZNowPlayingDuration();
     _progress.progress = duration > 0 ? FZNowPlayingElapsed() / duration : 0;
+    // Stays just over NaviMus's root view in the window (placeBar), whatever is added later.
+    UITabBarController *tabs = self.tabs;
+    if (tabs) placeBar(tabs);
+}
+
+- (void)refreshSoon {
+    // Route changes arrive off the main thread.
+    dispatch_async(dispatch_get_main_queue(), ^{ [self refresh]; });
 }
 
 - (void)refresh {
     NSDictionary *info = FZNowPlayingInfo();
-    _title.text = info[MPMediaItemPropertyTitle] ?: @"";
-    _artist.text = info[MPMediaItemPropertyArtist] ?: info[MPMediaItemPropertyAlbumArtist] ?: @"";
+    NSString *title = info[MPMediaItemPropertyTitle] ?: @"";
+    NSString *artist = info[MPMediaItemPropertyArtist] ?: info[MPMediaItemPropertyAlbumArtist] ?: @"";
+    // "Title • Artist" on one line, the artist in the secondary white (chroma.pw).
+    UIFont *font = FZRFont(UIFontTextStyleSubheadline, UIFontWeightMedium, UIContentSizeCategoryExtraLarge);
+    NSMutableAttributedString *line = [[NSMutableAttributedString alloc] initWithString:title
+        attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: FZRPrimary()}];
+    if (artist.length) {
+        [line appendAttributedString:[[NSAttributedString alloc] initWithString:[@" • " stringByAppendingString:artist]
+            attributes:@{NSFontAttributeName: FZRFont(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge),
+                         NSForegroundColorAttributeName: FZRSecondary()}]];
+    }
+    _title.attributedText = line;
+    NSString *symbol = nil;
+    NSString *route = routeName(&symbol);
+    _route.text = route;
+    _route.hidden = _routeIcon.hidden = route == nil;
+    _routeIcon.image = symbol ? routeGlyph(symbol, _route.font) : nil;
+    _airPlay.tintColor = route ? FZRAccent() : FZRPrimary();
+    _airPlay.activeTintColor = FZRAccent();
+
     BOOL playing = FZNowPlayingIsPlaying();
     [_play setSymbol:playing ? @"pause.fill" : @"play.fill"];
     _play.accessibilityLabel = playing ? @"Pause" : @"Play";
-    NSString *song = FZNowPlayingSongID() ?: _title.text;
+    NSString *song = FZNowPlayingSongID() ?: title;
     UIImage *image = FZNowPlayingArtwork(CGSizeMake(kArtwork * 3, kArtwork * 3));
     if (image || ![song isEqualToString:_artworkSong]) {
         if (image && ![song isEqualToString:_artworkSong] && _artwork.image) {
@@ -185,11 +247,10 @@ static char kBarGlassKey;
     _previous.hidden = !FZHidden(FZRKeyMiniPrevious);
     _play.hidden = !FZEnabled(FZRKeyMiniPlayPause);
     _next.hidden = !FZEnabled(FZRKeyMiniNext);
-    _route.hidden = !FZHidden(FZRKeyMiniAirPlay);
+    _airPlay.hidden = !FZHidden(FZRKeyMiniAirPlay);
     _progress.hidden = !FZEnabled(FZRKeyMiniProgress);
     [self tick];
     [self setNeedsLayout];
-    [self.superview setNeedsLayout];
 }
 
 - (void)layoutSubviews {
@@ -203,41 +264,46 @@ static char kBarGlassKey;
     if (!liquid) {
         // chroma.pw on iOS 17: the grey material with a faint lighter ring, as its glass circles.
         _glass.layer.borderWidth = 1;
-        _glass.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
+        _glass.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.10].CGColor;
     }
     _content.frame = b;
     _content.layer.cornerRadius = radius;
 
     CGFloat artwork = MIN(kArtwork, b.size.height - 2 * kInset);
     _artwork.frame = CGRectMake(kInset, round((b.size.height - artwork) / 2), artwork, artwork);
-    _artwork.layer.cornerRadius = FZHidden(FZRKeyMiniRoundArtwork) ? artwork / 2 : FZRRadiusThumb;
+    _artwork.layer.cornerRadius = FZEnabled(FZRKeyMiniRoundArtwork) ? artwork / 2 : FZRRadiusThumb;
 
+    // From the right: play/pause last, next just before it, then previous, download and AirPlay (chroma.pw's
+    // AirPlay, +, pause; the user asked for next before play/pause).
     CGFloat x = b.size.width - kInset;
-    for (UIView *button in @[_next, _play, _previous, _route, _download]) {
+    for (UIView *button in @[_play, _next, _previous, _download, _airPlay]) {
         if (button.hidden) continue;
         x -= kButton;
         button.frame = CGRectMake(x, round((b.size.height - kButton) / 2), kButton, kButton);
     }
     CGFloat textX = CGRectGetMaxX(_artwork.frame) + kTextGap;
-    CGFloat textWidth = MAX(0, x - 4 - textX);
-    CGFloat titleHeight = ceil(_title.font.lineHeight), artistHeight = _artist.text.length ? ceil(_artist.font.lineHeight) : 0;
-    CGFloat top = round((b.size.height - titleHeight - artistHeight) / 2);
+    CGFloat textWidth = MAX(0, x - 6 - textX);
+    CGFloat titleHeight = ceil(_title.font.lineHeight ?: 20), routeHeight = _route.hidden ? 0 : ceil(_route.font.lineHeight);
+    titleHeight = ceil([_title sizeThatFits:CGSizeMake(textWidth, CGFLOAT_MAX)].height) ?: titleHeight;
+    CGFloat top = round((b.size.height - titleHeight - routeHeight) / 2);
     _title.frame = CGRectMake(textX, top, textWidth, titleHeight);
-    _artist.frame = CGRectMake(textX, top + titleHeight, textWidth, artistHeight);
+    CGFloat icon = _routeIcon.image ? 14 : 0;
+    _routeIcon.frame = CGRectMake(textX - 2, top + titleHeight, icon, routeHeight);
+    _route.frame = CGRectMake(textX + icon + (icon ? 4 : 0), top + titleHeight, MAX(0, textWidth - icon - 4), routeHeight);
 
-    // Along the bottom edge, clear of the rounded corners.
-    CGFloat thickness = 2, sideInset = radius;
-    _progress.frame = CGRectMake(sideInset, b.size.height - 3 - thickness, MAX(0, b.size.width - 2 * sideInset), thickness);
+    // Flush along the bottom edge, the full width: the card's corners clip it.
+    _progress.frame = CGRectMake(0, b.size.height - kProgress, b.size.width, kProgress);
 }
 
 - (NSArray *)accessibilityElements {
     UIAccessibilityElement *summary = [[UIAccessibilityElement alloc] initWithAccessibilityContainer:self];
-    summary.accessibilityLabel = [NSString stringWithFormat:@"%@, %@", _title.text ?: @"", _artist.text ?: @""];
+    summary.accessibilityLabel = _title.attributedText.string ?: @"";
+    summary.accessibilityValue = _route.hidden ? nil : _route.text;
     summary.accessibilityHint = @"Opens the player";
     summary.accessibilityTraits = UIAccessibilityTraitButton;
-    summary.accessibilityFrameInContainerSpace = CGRectMake(0, 0, MAX(0, _title.frame.origin.x + _title.frame.size.width), self.bounds.size.height);
+    summary.accessibilityFrameInContainerSpace = CGRectMake(0, 0, MAX(0, CGRectGetMaxX(_title.frame)), self.bounds.size.height);
     NSMutableArray *elements = [NSMutableArray arrayWithObject:summary];
-    for (UIView *button in @[_download, _route, _previous, _play, _next]) if (!button.hidden) [elements addObject:button];
+    for (UIView *button in @[_airPlay, _download, _previous, _next, _play]) if (!button.hidden) [elements addObject:button];
     return elements;
 }
 
@@ -279,6 +345,7 @@ static IMP fz_origTabsLayout;
 static __weak UITabBarController *sTabs;
 static char kMiniBarKey;
 
+
 static FZRMiniBar *barOf(UITabBarController *tabs) {
     FZRMiniBar *bar = objc_getAssociatedObject(tabs, &kMiniBarKey);
     if (!bar) {
@@ -290,8 +357,26 @@ static FZRMiniBar *barOf(UITabBarController *tabs) {
     return bar;
 }
 
+// SwiftUI can make NaviMus's tab bar transparent (its backdrop came from the band now hidden): the redesign's
+// material goes back on before iOS 26 whenever the bar has no background of its own.
+static void ensureTabBarBackground(UITabBar *tabBar) {
+    UITabBarAppearance *look = FZRTabBarLook();
+    if (!look || !tabBar) return;
+    for (UITabBarAppearance *appearance in @[tabBar.standardAppearance ?: NSNull.null, tabBar.scrollEdgeAppearance ?: NSNull.null]) {
+        BOOL bare = [appearance isKindOfClass:NSNull.class]
+            || (!((UITabBarAppearance *)appearance).backgroundEffect && CGColorGetAlpha(((UITabBarAppearance *)appearance).backgroundColor.CGColor) < 0.5
+                && !((UITabBarAppearance *)appearance).backgroundImage);
+        if (!bare) continue;
+        tabBar.standardAppearance = look;
+        tabBar.scrollEdgeAppearance = look;
+        FZLog("player: the tab bar's background put back");
+        return;
+    }
+}
+
 static void placeBar(UITabBarController *tabs) {
     if (!tabs.isViewLoaded || !tabs.view.window) return;
+    ensureTabBarBackground(tabs.tabBar);
     sTabs = tabs;
     BOOL active = FZRPlayerActive();
     BOOL playing = FZNowPlayingInfo() != nil;
@@ -303,14 +388,20 @@ static void placeBar(UITabBarController *tabs) {
         return;
     }
     bar = barOf(tabs);
-    UIView *host = tabs.view;
-    UITabBar *tabBar = tabs.tabBar;
-    // Under the tab bar where it's the host's own subview (iOS 17), else over the content.
-    if (tabBar.superview == host) {
-        if (bar.superview != host || [host.subviews indexOfObject:bar] > [host.subviews indexOfObject:tabBar]) [host insertSubview:bar belowSubview:tabBar];
+    // In the window just over NaviMus's root view, under anything presented: NaviMus draws its own card in its root
+    // hosting view over the tabs (device, build 40), and SwiftUI's gestures there would also take every touch on a
+    // bar inside that view (harness: the card underneath was tapped with each of Frozio's buttons).
+    UIWindow *window = tabs.view.window;
+    UIView *top = tabs.view;
+    while (top.superview && top.superview != window) top = top.superview;
+    UIView *host = window ?: tabs.view;
+    if (top.superview == window) {
+        NSUInteger above = [window.subviews indexOfObject:top] + 1;
+        if (bar.superview != window || [window.subviews indexOfObject:bar] != above) [window insertSubview:bar aboveSubview:top];
     } else if (bar.superview != host) {
         [host addSubview:bar];
     }
+    UITabBar *tabBar = tabs.tabBar;
     BOOL barShown = tabBar.window && !tabBar.hidden && tabBar.alpha > 0.01;
     CGFloat bottom = barShown ? CGRectGetMinY([tabBar convertRect:tabBar.bounds toView:host]) : host.bounds.size.height - host.safeAreaInsets.bottom;
     CGRect frame = CGRectMake(kCardSide + host.safeAreaInsets.left, bottom - kCardAboveBar - kCardHeight,

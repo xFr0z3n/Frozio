@@ -56,7 +56,8 @@ private struct StandInRoot: View {
             if #available(iOS 26.0, *), !legacyMini {
                 tabs.tabViewBottomAccessory { MiniPlayer() }
             } else {
-                tabs
+                // NaviMus's visible card is drawn over the tabs from the root view (device, build 40).
+                tabs.overlay(alignment: .bottom) { RootCard() }
             }
         }
         .preferredColorScheme(light ? .light : nil)
@@ -241,7 +242,7 @@ private struct LibraryTab: View {
         NavigationStack {
             List {
                 ForEach(["Playlists", "Artists", "Albums", "Songs", "Genres", "Downloaded"], id: \.self) { name in
-                    NavigationLink(name) { List(albums) { AlbumRow(album: $0) }.navigationTitle(name) }
+                    NavigationLink(name) { LibraryCategory(name: name) }
                 }
                 Section("Recently Added") {
                     ForEach(albums.prefix(5)) { AlbumRow(album: $0) }
@@ -249,6 +250,42 @@ private struct LibraryTab: View {
             }
             .navigationTitle("Library")
         }
+    }
+}
+
+// A Library category as NaviMus draws it (the user's screenshot, build 40): a sort menu and ⋯ in the bar, tinted.
+private struct LibraryCategory: View {
+    let name: String
+    @AppStorage("albumType") private var albumType = "alphabeticalByName"
+    var body: some View {
+        List(albums) { AlbumRow(album: $0) }
+            .navigationTitle(name)
+            // As NaviMus does: the stored sort becomes getAlbumList2's type.
+            .task(id: albumType) {
+                var request = URLRequest(url: URL(string: "http://localhost:4533/rest/getAlbumList2.view?type=\(albumType)&size=50&u=demo&f=json")!)
+                request.httpMethod = "GET"
+                NSLog("[harness] album list request %@", request.url?.absoluteString ?? "")
+                _ = try? await URLSession.shared.data(for: request)
+            }
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Sort", selection: $albumType) {
+                            Text("Name").tag("alphabeticalByName")
+                            Text("Artist").tag("alphabeticalByArtist")
+                            Text("Recently Added").tag("newest")
+                            Text("Frequently Played").tag("frequent")
+                            Text("Recently Played").tag("recent")
+                            Text("Random").tag("random")
+                        }
+                    } label: { Image(systemName: "line.3.horizontal.decrease") }
+                        .accessibilityLabel("Sort")
+                    Menu {
+                        Button("Shuffle All") {}
+                    } label: { Image(systemName: "ellipsis") }
+                        .accessibilityLabel("More")
+                }
+            }
     }
 }
 
@@ -313,14 +350,13 @@ private extension View {
 // ⋯ menu has the song's Download (names guessed until the device log shows NaviMus's).
 private struct LegacyBand: View {
     @ObservedObject private var model = StandInPlayer.shared.model
-    @State private var expanded = false
     var body: some View {
         if model.song != nil {
             Group {
-                if expanded {
+                if model.expanded {
                     VStack(spacing: 24) {
                         HStack {
-                            Button { expanded = false } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }
+                            Button { model.expanded = false } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }
                                 .accessibilityLabel("Close")
                             Spacer()
                             Menu {
@@ -342,7 +378,7 @@ private struct LegacyBand: View {
                             .frame(height: 64)
                             .background(.regularMaterial)
                             .contentShape(Rectangle())
-                            .onTapGesture { expanded = true }
+                            .onTapGesture { model.expanded = true }
                         Color.clear.frame(height: 88)   // under the tab bar, as NaviMus's band
                     }
                 }
@@ -350,7 +386,21 @@ private struct LegacyBand: View {
             .ignoresSafeArea(edges: .bottom)
             .compositingGroup()
             .geometryGroup()
-            .animation(.spring, value: expanded)
+            .animation(.spring, value: model.expanded)
+        }
+    }
+}
+
+private struct RootCard: View {
+    @ObservedObject private var model = StandInPlayer.shared.model
+    var body: some View {
+        if model.song != nil && !model.expanded {
+            MiniPlayer()
+                .frame(height: 56)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal, 8)
+                .padding(.bottom, 57)
+                .onTapGesture { NSLog("[harness] NaviMus root card tapped"); model.expanded = true }
         }
     }
 }
@@ -372,6 +422,7 @@ private struct MiniPlayer: View {
 // and its command handlers (play/pause, next, previous, position, shuffle, repeat).
 final class StandInModel: ObservableObject {
     @Published var song: String?
+    @Published var expanded = false   // NaviMus's player open (it grows out of the band)
 }
 
 @MainActor

@@ -12,6 +12,7 @@
 #import "Redesign/FZRAppLook.h"
 #import "Redesign/FZRNaviMusControls.h"
 #import "Redesign/Player/FZRPlayer.h"
+#import "Redesign/FZRLibrarySorts.h"
 #import "Redesign/Data/FZServer.h"
 #import "Lyrics/FZLockScreenLyrics.h"
 #import "ArtistBlock/FZArtistBlock.h"
@@ -46,5 +47,6 @@ __attribute__((constructor)) static void FrozioInit(void) {
         // NaviMus's next-track handler is seen as it registers.
         FZInstallRemote();          // NaviMus's command handlers and Now Playing (after lyrics)
         FZInstallArtistBlock();
+        FZInstallLibrarySorts();    // Year and Favourites in NaviMus's album sort menu (reads its switch live)
     }
 }

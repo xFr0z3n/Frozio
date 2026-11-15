@@ -4,6 +4,7 @@
 #import "Redesign/FZRAppLook.h"
 #import "Redesign/Album/FZRAlbumPage.h"
 #import "Redesign/FZRTap.h"
+#import "Redesign/FZRBarButtons.h"
 #import "Core/FZHook.h"
 #import "Core/FZLog.h"
 
@@ -434,7 +435,13 @@ static void closeMenu(UIViewController *menu, UIWindow *window, CGPoint point) {
             if ([interaction isKindOfClass:UIContextMenuInteraction.class]) [(UIContextMenuInteraction *)interaction dismissMenu];
         }
     }
-    if (menu.presentingViewController && !menu.isBeingDismissed) [menu dismissViewControllerAnimated:NO completion:nil];
+    // Closed through its interaction as UIKit does; dismissing the controller as well left the status bar hidden
+    // (harness). Only a menu still up a moment later is dismissed directly.
+    __weak UIViewController *weakMenu = menu;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIViewController *left = weakMenu;
+        if (left.presentingViewController && !left.isBeingDismissed) [left dismissViewControllerAnimated:NO completion:nil];
+    });
 }
 
 static void pickFromSilentMenu(NSUInteger tries) {
@@ -524,6 +531,7 @@ static void applyHidden(UINavigationBar *bar, BOOL hidden) {
 static void fz_barLayout(UINavigationBar *self, SEL _cmd) {
     ((void (*)(id, SEL))fz_origBarLayout)(self, _cmd);
     if (objc_getAssociatedObject(self, &kBarHiddenKey) && !self.layer.mask) applyHidden(self, YES);
+    FZRStyleBarButtons(self);
 }
 
 void FZRSetNaviMusBarHidden(UIViewController *page, BOOL hidden, id<UIViewControllerTransitionCoordinator> transition) {

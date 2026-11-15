@@ -8,6 +8,7 @@
 #import "Redesign/Kit/FZRAccent.h"
 #import "Redesign/FZRAppLook.h"
 #import "Redesign/Album/FZRAlbumPage.h"
+#import "Redesign/FZRLibrarySorts.h"
 #import "Diagnostics/FZLibrarySchema.h"
 
 UIImage *FZLogoImage(void) {
@@ -303,6 +304,7 @@ UIViewController *FZMakeSettingsPage(void) {
         FZNotedSection(@"Appearance", appearance, @"Changes to NaviMus's tint apply after you restart the app."),
         FZNotedSection(@"Lyrics", @[lockLyrics], @"Applies right away, from the next line."),
         FZSection(@"Playback", @[blocked]),
+        FZNotedSection(@"Library", @[FZWithSymbol(FZSwitchRow(@"More sort options", @"Year (newest or oldest first) and Favourites for Albums.", FZKeyLibrarySorts), @"arrow.up.arrow.down")], @"Applies the next time a sort menu opens."),
         FZNotedSection(@"Fixes", @[guard], FZRestartNote),
     ]];
 #ifdef FROZIO_DEBUG
