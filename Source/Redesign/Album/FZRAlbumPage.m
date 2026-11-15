@@ -443,7 +443,7 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
 }
 
 - (void)applyOptions {
-    _back.circled = FZHidden(FZRKeyCircleBack);
+    _back.circled = FZEnabled(FZRKeyCircleBack);
     _more.circled = FZEnabled(FZRKeyCircleMore);
     _header.shuffle.circled = _header.download.circled = FZEnabled(FZRKeyCircleActions);
     _header.shuffle.hidden = !FZEnabled(FZRKeyAlbumShuffle);
@@ -729,20 +729,19 @@ static NSString *string(id value) {
 #pragma mark - options
 
 UIViewController *FZRRedesignOptionsPage(void) {
-    FZModRow *circleBack = FZWithSymbol(FZOptionRow(@"Circle behind back", @"chroma.pw shows a bare chevron on iOS 17.", FZRKeyCircleBack), @"chevron.left.circle");
-    FZModRow *circleMore = FZWithSymbol(FZSwitchRow(@"Circle behind ⋯", nil, FZRKeyCircleMore), @"ellipsis.circle");
+    FZModRow *circleBack = FZWithSymbol(FZSwitchRow(@"Circle behind back", @"Back on every page, ⌄ in the player.", FZRKeyCircleBack), @"chevron.left.circle");
+    FZModRow *circleMore = FZWithSymbol(FZSwitchRow(@"Circle behind ⋯", @"Every page and the player.", FZRKeyCircleMore), @"ellipsis.circle");
+    FZModRow *circleOthers = FZWithSymbol(FZSwitchRow(@"Circles behind other bar buttons", @"NaviMus's sort, filter and other buttons beside ⋯.", FZRKeyCircleOthers), @"circle.grid.2x1");
     FZModRow *circleActions = FZWithSymbol(FZSwitchRow(@"Circles behind shuffle and download", nil, FZRKeyCircleActions), @"circle.dashed");
     FZModRow *shuffle = FZWithSymbol(FZSwitchRow(@"Shuffle button", nil, FZRKeyAlbumShuffle), @"shuffle");
     FZModRow *download = FZWithSymbol(FZSwitchRow(@"Download button", @"In place of chroma.pw's +.", FZRKeyAlbumDownload), @"arrow.down.circle");
     FZModRow *meta = FZWithSymbol(FZSwitchRow(@"Genre, type and year", nil, FZRKeyAlbumMeta), @"text.alignleft");
-    FZModRow *barCircles = FZWithSymbol(FZSwitchRow(@"Glass circles behind bar buttons", @"Back, ⋯ and NaviMus's other bar buttons. Before iOS 26.", FZRKeyBarCircles), @"circle");
     FZModRow *barWhite = FZWithSymbol(FZSwitchRow(@"White bar buttons", @"Off keeps NaviMus's tint.", FZRKeyBarWhite), @"paintbrush");
     FZModRow *bareBack = FZWithSymbol(FZSwitchRow(@"Back without the page's name", nil, FZRKeyBarBareBack), @"chevron.left");
-    NSMutableArray *sections = [NSMutableArray arrayWithObject:FZNotedSection(@"Bars", @[barCircles, barWhite, bareBack], @"NaviMus's own pages, everywhere in the app.")];
+    NSMutableArray *sections = [NSMutableArray arrayWithObject:FZNotedSection(@"Bars", @[circleBack, circleMore, circleOthers, barWhite, bareBack], @"Every page, the album page and the player. Circles before iOS 26; iOS 26 draws its own glass.")];
     [sections addObjectsFromArray:FZRPlayerOptionSections()];
     [sections addObjectsFromArray:@[
-        FZNotedSection(@"Buttons", @[circleBack, circleMore, circleActions], @"Off leaves only the icon."),
-        FZNotedSection(@"Album", @[shuffle, download, meta], @"Changes show the next time a page opens."),
+        FZNotedSection(@"Album", @[circleActions, shuffle, download, meta], @"Changes show the next time a page opens."),
     ]];
     return [[FZModPage alloc] initWithTitle:@"Redesigned pages" intro:nil sections:sections footer:nil];
 }

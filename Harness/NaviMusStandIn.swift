@@ -123,6 +123,13 @@ struct PlaySongIntent: AppIntent {
         return .result()
     }
 }
+struct LikeSongIntent: AppIntent {
+    static let title: LocalizedStringResource = "Love Song"
+    func perform() async throws -> some IntentResult {
+        NSLog("[harness] LikeSongIntent performed")
+        return .result()
+    }
+}
 struct OpenArtistIntent: AppIntent {
     static let title: LocalizedStringResource = "Open Artist"
     @Parameter(title: "Artist") var target: ArtistEntity
@@ -256,7 +263,7 @@ private struct LibraryTab: View {
 // A Library category as NaviMus draws it (the user's screenshot, build 40): a sort menu and ⋯ in the bar, tinted.
 private struct LibraryCategory: View {
     let name: String
-    @AppStorage("albumType") private var albumType = "alphabeticalByName"
+    @AppStorage("libraryAlbumsOrder") private var albumType = "alphabeticalByName"
     var body: some View {
         List(albums) { AlbumRow(album: $0) }
             .navigationTitle(name)
@@ -361,6 +368,8 @@ private struct LegacyBand: View {
                             Spacer()
                             Menu {
                                 Button("Download") { NSLog("[harness] NaviMus player menu: Download song") }
+                                Button("Add to Playlist") { NSLog("[harness] NaviMus player menu: Add to Playlist") }
+                                Button("Add to Queue") { NSLog("[harness] NaviMus player menu: Add to Queue") }
                                 Button("Go to Album") {}
                             } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
                                 .accessibilityLabel("More")
@@ -474,6 +483,11 @@ final class StandInPlayer {
             let n = max(1, (Int(song.dropFirst(3)) ?? 1) - 1)
             NSLog("[harness] previous track")
             self.play("so-\(n)")
+            return .success
+        }
+        center.changePlaybackRateCommand.addTarget { event in
+            guard let event = event as? MPChangePlaybackRateCommandEvent else { return .commandFailed }
+            NSLog("[harness] NaviMus rate handler → %.2f", event.playbackRate)
             return .success
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in

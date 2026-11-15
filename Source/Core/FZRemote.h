@@ -21,6 +21,9 @@ NSTimeInterval FZNowPlayingElapsed(void); // seconds into the song now: the repo
 NSTimeInterval FZNowPlayingDuration(void);// seconds, 0 when unknown
 UIImage *FZNowPlayingArtwork(CGSize size);// the artwork NaviMus hands the system, nil without one
 
+/// Whether NaviMus has a handler for `command`.
+BOOL FZRemoteHandles(MPRemoteCommand *command);
+
 /// Seeks with NaviMus's change-position handler, as the lock screen's scrubber does.
 BOOL FZRemoteSeek(NSTimeInterval seconds);
 

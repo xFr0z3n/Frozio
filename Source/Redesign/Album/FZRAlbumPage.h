@@ -17,8 +17,8 @@
 #pragma once
 #import <UIKit/UIKit.h>
 
-extern NSString *const FZRKeyCircleBack;      // "fz.redesign.circle.back": a glass circle behind back (off: bare)
-extern NSString *const FZRKeyCircleMore;      // "fz.redesign.circle.more": behind ⋯ (on)
+extern NSString *const FZRKeyCircleBack;      // "fz.redesign.circle.back": a glass circle behind back, everywhere (on)
+extern NSString *const FZRKeyCircleMore;      // "fz.redesign.circle.more": behind ⋯, everywhere (on)
 extern NSString *const FZRKeyCircleActions;   // "fz.redesign.circle.actions": behind shuffle and download (on)
 extern NSString *const FZRKeyAlbumShuffle;    // "fz.redesign.album.shuffle": the shuffle button (on)
 extern NSString *const FZRKeyAlbumDownload;   // "fz.redesign.album.download": the download button (on)

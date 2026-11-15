@@ -9,6 +9,8 @@
 /// kind: "Album", "Artist", "Playlist", "Song". Completion on the main thread; `why` says what failed.
 void FZRNaviMusPlay(NSString *kind, NSString *identifier, void (^completion)(BOOL ok, NSString *why));
 void FZRNaviMusOpen(NSString *kind, NSString *identifier, void (^completion)(BOOL ok, NSString *why));
+/// Runs one of NaviMus's parameterless App Intents by name ("LikeSongIntent").
+void FZRNaviMusPerform(NSString *intent, void (^completion)(BOOL ok, NSString *why));
 
 /// Activates the first accessibility element of NaviMus's page `page` (its content, then its navigation bar,
 /// where its toolbar items are) whose label is one of `labels` (case-insensitive). With `after`, only elements

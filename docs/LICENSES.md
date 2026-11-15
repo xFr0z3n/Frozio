@@ -11,6 +11,8 @@ Frozio is licensed under **GPL-3.0** (`LICENSE`), as decided in Phase 0 (the use
 | spoti.pw **after v0.21.1** (current `main`, v0.50+) | PolyForm Strict 1.0.0 | **No.** Values and behaviour are recorded in `DESIGN_TOKENS.md` / `FEATURE_MATRIX.md`; no source is copied |
 | amperfy | GPL-3.0 | **Yes**, with `// Adapted from amperfy/<path>:<lines> (GPL-3.0)` |
 | FrozenMusic | GPL-3.0 | Structure and CI shape only |
+| Kawarp (`github.com/better-lyrics/kawarp`, the fluid background chroma.pw credits) | MIT, Copyright (c) 2026 Better Lyrics | **Yes**, with the copyright and permission notice (below) |
+| chroma.pw's dylibs (`SpotifyGlass*.dylib`, `work/dumps/`) | PolyForm Strict 1.0.0 | **No.** Values, names and behaviour only; their shaders and code are not copied |
 | `pngs/patch-ipa-icon.py` (xFr0z3n) | the user's own | Adapted into `scripts/patch_icons.py` |
 
 Every borrowed file or block carries a header comment `// Adapted from <repo>/<path>:<lines> (<licence>)`, and gets a row below.
@@ -55,6 +57,7 @@ Every borrowed file or block carries a header comment `// Adapted from <repo>/<p
 | `Source/Redesign/Player/FZRMiniPlayer.m` | `taurus/tweak/Sources/Redesigned/NowPlayingBar/NowPlayingBar.x` @ fe3211c (card radius, glass, progress line values; rebuilt as Frozio's own bar) | GPL-3.0 |
 | `Source/Redesign/Player/FZRPlayer.m` | `taurus/tweak/Sources/Redesigned/Player/PlayerHeader.x`, `PlayerArtwork.x`, `PlayerControls.x`, `PlayerFooter.x`, `PlayerField.x`, `PlayerLyrics.x` @ fe3211c (layout values and structure; rebuilt as a standalone player for NaviMus) | GPL-3.0 |
 | `Source/Redesign/FZRBarButtons.m` | `taurus/tweak/Sources/Redesigned/Player/PlayerHeader.x`, `Kit/SGRGlass.m` @ fe3211c (the 44 pt round glass behind top bar buttons) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRKawarp.m` | `better-lyrics/kawarp@f4a4b29`, `packages/core/src/index.ts`, `defaults.ts` (shaders rewritten in Metal, same constants and passes) | MIT |
 
 ## Build-time tools (not shipped)
 
@@ -62,3 +65,15 @@ Every borrowed file or block carries a header comment `// Adapted from <repo>/<p
 |---|---|---|
 | Theos | `theos/theos@344ee59` | GPL-3.0 |
 | insert_dylib | `Tyilo/insert_dylib@eb72781` | MIT |
+
+## Kawarp's notice
+
+MIT License
+
+Copyright (c) 2026 Better Lyrics
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
