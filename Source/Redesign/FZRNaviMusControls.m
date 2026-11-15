@@ -5,6 +5,7 @@
 #import "Redesign/Album/FZRAlbumPage.h"
 #import "Redesign/FZRTap.h"
 #import "Redesign/FZRBarButtons.h"
+#import "Settings/Kit/FZKitCore.h"
 #import "Core/FZHook.h"
 #import "Core/FZLog.h"
 
@@ -592,6 +593,15 @@ static UIViewController *rebuiltPageFor(UIViewController *vc) {
             return nil;
         }
         return [[FZRAlbumPage alloc] initWithAlbumID:albumID naviMusPage:vc];
+    }
+    // NaviMus's playlist page (Arpeggi.PlaylistDetailViewWrapper { playlist: Playlist }, device log build 46).
+    if ([type hasSuffix:@".PlaylistDetailViewWrapper"] && FZEnabled(FZRKeyPlaylistPage)) {
+        NSString *playlistID = pageString(vc, @"playlist.id");
+        if (!playlistID.length) {
+            FZLogError("redesign: playlist page without a playlist ID; NaviMus's page stays");
+            return nil;
+        }
+        return [[FZRAlbumPage alloc] initWithPlaylistID:playlistID naviMusPage:vc];
     }
     return nil;
 }

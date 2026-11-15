@@ -24,6 +24,7 @@ NSString *const FZRKeyCircleActions = @"fz.redesign.circle.actions";
 NSString *const FZRKeyAlbumShuffle = @"fz.redesign.album.shuffle";
 NSString *const FZRKeyAlbumDownload = @"fz.redesign.album.download";
 NSString *const FZRKeyAlbumMeta = @"fz.redesign.album.meta";
+NSString *const FZRKeyPlaylistPage = @"fz.redesign.playlist.page";
 
 // SGRHeaderInfo.m / AlbumHeader.x / AlbumField.x / SGRActionRow.m values.
 static const CGFloat kSide = 20, kPlayWidth = 148, kRowSpacing = 16, kRowAbove = 16, kInfoBottom = 14;
@@ -116,7 +117,17 @@ static const CGFloat kScrollBlur = 24;   // the cover's blur once half the hero 
         [bars addObject:bar];
     }
     _bars = bars;
+    // UIKit drops a view's animations when the app goes to the background; start them again on return (device,
+    // build 46: the bars stood still after leaving the app and coming back).
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restartMoving) name:UIApplicationDidBecomeActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restartMoving) name:UIApplicationWillEnterForegroundNotification object:nil];
     return self;
+}
+- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
+- (void)restartMoving {
+    if (!_moving) return;
+    _moving = NO;
+    self.moving = YES;
 }
 - (CGSize)sizeThatFits:(CGSize)size { return CGSizeMake(14, 13); }
 - (void)tintColorDidChange {
@@ -150,6 +161,7 @@ static const CGFloat kScrollBlur = 24;   // the cover's blur once half the hero 
         bounce.duration = periods[i] * 4;
         bounce.repeatCount = HUGE_VALF;
         bounce.calculationMode = kCAAnimationCubic;
+        bounce.removedOnCompletion = NO;
         [_bars[i] addAnimation:bounce forKey:@"bounce"];
     }
     [self setNeedsLayout];
@@ -321,6 +333,8 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
 @property (nonatomic, readonly) UIImageView *explicitBadge;
 @property (nonatomic, readonly) UIButton *more;
 @property (nonatomic, readonly) FZRPlayingBars *bars;
+@property (nonatomic, readonly) UIImageView *cover;   // playlists: each song's cover at the row's start
+@property (nonatomic, copy) NSString *coverID;
 - (void)showPlaying:(BOOL)current moving:(BOOL)moving;
 @end
 
@@ -352,12 +366,24 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     _bars.hidden = YES;
     _hairline = [UIView new];
     _hairline.backgroundColor = FZRHairline();
+    _cover = [UIImageView new];
+    _cover.contentMode = UIViewContentModeScaleAspectFill;
+    _cover.clipsToBounds = YES;
+    _cover.layer.cornerRadius = 4;
+    _cover.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
+    _cover.hidden = YES;
+    [self.contentView addSubview:_cover];
     for (UIView *v in @[_bars, _name, _artists, _explicitBadge, _more, _hairline]) [self.contentView addSubview:v];
     return self;
 }
 - (void)tintColorDidChange {
     [super tintColorDidChange];
     if (_current) _name.textColor = FZRAccent();
+}
+- (void)prepareForReuse {
+    [super prepareForReuse];
+    _cover.image = nil;
+    _coverID = nil;
 }
 - (void)showPlaying:(BOOL)current moving:(BOOL)moving {
     _current = current;
@@ -375,21 +401,27 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     CGFloat textRight = CGRectGetMinX(_more.frame) - 8;
     CGFloat nameH = ceil(_name.font.lineHeight), artistsH = ceil(_artists.font.lineHeight);
     CGFloat top = round((b.size.height - nameH - 2 - artistsH) / 2);
-    CGFloat x = FZRSideMargin;
+    CGFloat lead = FZRSideMargin;
+    if (!_cover.hidden) {
+        CGFloat side = b.size.height - 16;
+        _cover.frame = CGRectMake(FZRSideMargin, 8, side, side);
+        lead = CGRectGetMaxX(_cover.frame) + 12;
+    }
+    CGFloat x = lead;
     if (!_bars.hidden) {
         CGSize s = [_bars sizeThatFits:CGSizeZero];
         _bars.frame = CGRectMake(x, top + round((nameH - s.height) / 2), s.width, s.height);
         x = CGRectGetMaxX(_bars.frame) + 6;
     }
     _name.frame = CGRectMake(x, top, MAX(0, textRight - x), nameH);
-    x = FZRSideMargin;
+    x = lead;
     if (!_explicitBadge.hidden) {
         CGSize s = _explicitBadge.image.size;
         _explicitBadge.frame = CGRectMake(x, top + nameH + 2 + round((artistsH - s.height) / 2), s.width, s.height);
         x = CGRectGetMaxX(_explicitBadge.frame) + 6;
     }
     _artists.frame = CGRectMake(x, top + nameH + 2, MAX(0, textRight - x), artistsH);
-    _hairline.frame = CGRectMake(FZRSideMargin, b.size.height - kHairline, b.size.width - 2 * FZRSideMargin, kHairline);
+    _hairline.frame = CGRectMake(lead, b.size.height - kHairline, b.size.width - 2 * FZRSideMargin, kHairline);
 }
 @end
 
@@ -399,7 +431,8 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
 @end
 
 @implementation FZRAlbumPage {
-    NSString *_albumID;
+    NSString *_albumID;    // the album's, or the playlist's
+    BOOL _playlist;
     __weak UIViewController *_naviMusPage;
     FZRArtworkField *_field;
     UITableView *_table;
@@ -418,6 +451,14 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     _naviMusPage = naviMusPage;
     return self;
 }
+
+- (instancetype)initWithPlaylistID:(NSString *)playlistID naviMusPage:(UIViewController *)naviMusPage {
+    if (!(self = [self initWithAlbumID:playlistID naviMusPage:naviMusPage])) return nil;
+    _playlist = YES;
+    return self;
+}
+
+- (NSString *)kind { return _playlist ? @"Playlist" : @"Album"; }
 
 - (void)dealloc {
     if (_nowPlayingObserver) [NSNotificationCenter.defaultCenter removeObserver:_nowPlayingObserver];
@@ -440,7 +481,7 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     _table.backgroundColor = UIColor.clearColor;
     _table.separatorStyle = UITableViewCellSeparatorStyleNone;
     _table.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
-    _table.rowHeight = 64;
+    _table.rowHeight = _playlist ? 72 : 64;
     _table.dataSource = self;
     _table.delegate = self;
     _table.showsVerticalScrollIndicator = NO;
@@ -465,6 +506,7 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { [weakSelf showPlayback]; }];
     [self applyOptions];
     [self load];
+    FZLog("redesign album: %@ page for %@", self.kind, _albumID);
     FZLog("redesign album: page for %@ (Reduce Motion %d, Reduce Transparency %d)", _albumID, FZRReduceMotion(), FZRReduceTransparency());
 }
 
@@ -516,13 +558,14 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
 
 - (void)load {
     __weak typeof(self) weakSelf = self;
-    FZServerGet(@"getAlbum", @{@"id": _albumID}, ^(NSDictionary *response, NSError *error) {
+    NSString *endpoint = _playlist ? @"getPlaylist" : @"getAlbum", *key = _playlist ? @"playlist" : @"album";
+    FZServerGet(endpoint, @{@"id": _albumID}, ^(NSDictionary *response, NSError *error) {
         typeof(self) page = weakSelf;
         if (!page) return;
-        NSDictionary *album = [response[@"album"] isKindOfClass:NSDictionary.class] ? response[@"album"] : nil;
+        NSDictionary *album = [response[key] isKindOfClass:NSDictionary.class] ? response[key] : nil;
         if (!album) {
-            FZLogError("redesign album: getAlbum failed (%@)", error.localizedDescription ?: @"no album");
-            [page showProblem:error.localizedDescription ?: @"The album couldn't be loaded."];
+            FZLogError("redesign album: %@ failed (%@)", endpoint, error.localizedDescription ?: @"nothing");
+            [page showProblem:error.localizedDescription ?: [NSString stringWithFormat:@"The %@ couldn't be loaded.", key]];
             return;
         }
         [page showAlbum:album];
@@ -537,12 +580,25 @@ static NSString *string(id value) {
 
 - (void)showAlbum:(NSDictionary *)album {
     _album = album;
-    id songs = album[@"song"];
+    id songs = album[_playlist ? @"entry" : @"song"];
     _songs = [songs isKindOfClass:NSArray.class] ? songs : @[];
     NSMutableSet *ids = [NSMutableSet set];
     for (NSDictionary *song in _songs) if (string(song[@"id"])) [ids addObject:string(song[@"id"])];
     _songIDs = ids;
     _header.title.text = string(album[@"name"]);
+    if (_playlist) {
+        // A playlist: its owner, then "12 songs · 4 h 5 min" (chroma.pw's playlist header).
+        _header.artist.text = string(album[@"owner"]);
+        _header.artist.accessibilityTraits = UIAccessibilityTraitStaticText;
+        NSInteger count = [album[@"songCount"] respondsToSelector:@selector(integerValue)] ? [album[@"songCount"] integerValue] : (NSInteger)_songs.count;
+        NSInteger seconds = [album[@"duration"] respondsToSelector:@selector(integerValue)] ? [album[@"duration"] integerValue] : 0;
+        NSMutableArray *meta = [NSMutableArray arrayWithObject:[NSString stringWithFormat:@"%ld %@", (long)count, count == 1 ? @"song" : @"songs"]];
+        if (seconds >= 3600) [meta addObject:[NSString stringWithFormat:@"%ld h %ld min", (long)(seconds / 3600), (long)(seconds % 3600 / 60)]];
+        else if (seconds > 0) [meta addObject:[NSString stringWithFormat:@"%ld min", (long)MAX(1, seconds / 60)]];
+        _header.meta.text = [meta componentsJoinedByString:@" · "];
+        [self finishShowing:album];
+        return;
+    }
     _header.artist.text = string(album[@"displayArtist"]) ?: string(album[@"artist"]);
     NSMutableArray *meta = [NSMutableArray array];
     NSString *genre = string(album[@"genre"]);
@@ -553,6 +609,10 @@ static NSString *string(id value) {
     NSString *year = string(album[@"year"]);
     if (year.length && ![year isEqualToString:@"0"]) [meta addObject:year];
     _header.meta.text = [meta componentsJoinedByString:@" · "];
+    [self finishShowing:album];
+}
+
+- (void)finishShowing:(NSDictionary *)album {
     [_header setNeedsLayout];
     [self.view setNeedsLayout];
     [_table reloadData];
@@ -576,7 +636,7 @@ static NSString *string(id value) {
 }
 
 - (void)showProblem:(NSString *)message {
-    _header.title.text = @"Couldn't load the album";
+    _header.title.text = _playlist ? @"Couldn't load the playlist" : @"Couldn't load the album";
     _header.meta.text = message;
     [_header setNeedsLayout];
     [self.view setNeedsLayout];
@@ -626,7 +686,11 @@ static NSString *string(id value) {
     }
     _shuffleOn = NO;
     __weak typeof(self) weakSelf = self;
-    FZRNaviMusPlay(@"Album", _albumID, ^(BOOL ok, NSString *why) { [weakSelf report:@"play the album" ok:ok why:why]; });
+    NSString *kind = self.kind;
+    if (_playlist && FZRActivateNaviMusControl(_naviMusPage, nil, @[@"Play"])) return;   // NaviMus's own Play on its page
+    FZRNaviMusPlay(kind, _albumID, ^(BOOL ok, NSString *why) {
+        [weakSelf report:[NSString stringWithFormat:@"play the %@", kind.lowercaseString] ok:ok why:why];
+    });
 }
 
 // Shuffle: NaviMus's own shuffle on its album page (its header's left button, which NaviMus labels "Repeat"; device
@@ -709,6 +773,7 @@ static NSString *string(id value) {
 }
 
 - (void)openArtist {
+    if (_playlist) return;
     NSString *artistID = string(_album[@"artistId"]);
     if (!artistID.length) return;
     __weak typeof(self) weakSelf = self;
@@ -731,12 +796,32 @@ static NSString *string(id value) {
     cell.name.text = string(song[@"title"]);
     cell.artists.text = string(song[@"displayArtist"]) ?: string(song[@"artist"]);
     cell.explicitBadge.hidden = ![string(song[@"explicitStatus"]) isEqualToString:@"explicit"];
+    cell.cover.hidden = !_playlist;
+    if (_playlist) [self loadCover:string(song[@"coverArt"]) ?: string(song[@"albumId"]) into:cell];
     [cell.more removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
     [cell.more addTarget:self action:@selector(showSongMenu:) forControlEvents:UIControlEventTouchUpInside];
     NSString *playing = FZNowPlayingSongID();
     BOOL here = playing && [string(song[@"id"]) isEqualToString:playing];
     [cell showPlaying:here moving:here && FZNowPlayingIsPlaying()];
     return cell;
+}
+
+// A playlist row's cover: kept for the session, so scrolling back shows it at once.
+- (void)loadCover:(NSString *)coverID into:(FZRTrackCell *)cell {
+    static NSCache<NSString *, UIImage *> *covers;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ covers = [NSCache new]; covers.countLimit = 400; });
+    cell.coverID = coverID;
+    cell.cover.image = coverID ? [covers objectForKey:coverID] : nil;
+    if (!coverID || cell.cover.image) return;
+    NSInteger pixels = (NSInteger)ceil(_table.rowHeight * UIScreen.mainScreen.scale);
+    __weak FZRTrackCell *weakCell = cell;
+    FZServerImage(FZServerCoverURL(coverID, pixels), ^(UIImage *image) {
+        if (!image) return;
+        [covers setObject:image forKey:coverID];
+        FZRTrackCell *c = weakCell;
+        if (c && [c.coverID isEqualToString:coverID]) c.cover.image = image;   // still that song's row
+    });
 }
 
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
@@ -776,12 +861,13 @@ UIViewController *FZRRedesignOptionsPage(void) {
     FZModRow *shuffle = FZWithSymbol(FZSwitchRow(@"Shuffle button", nil, FZRKeyAlbumShuffle), @"shuffle");
     FZModRow *download = FZWithSymbol(FZSwitchRow(@"Download button", @"In place of chroma.pw's +.", FZRKeyAlbumDownload), @"arrow.down.circle");
     FZModRow *meta = FZWithSymbol(FZSwitchRow(@"Genre, type and year", nil, FZRKeyAlbumMeta), @"text.alignleft");
+    FZModRow *playlistPage = FZWithSymbol(FZSwitchRow(@"Playlists like albums", @"The album page for playlists, each song with its cover.", FZRKeyPlaylistPage), @"music.note.list");
     FZModRow *barWhite = FZWithSymbol(FZSwitchRow(@"White bar buttons", @"Off keeps NaviMus's tint.", FZRKeyBarWhite), @"paintbrush");
     FZModRow *bareBack = FZWithSymbol(FZSwitchRow(@"Back without the page's name", nil, FZRKeyBarBareBack), @"chevron.left");
     NSMutableArray *sections = [NSMutableArray arrayWithObject:FZNotedSection(@"Bars", @[circleBack, circleMore, circleOthers, barWhite, bareBack], @"Every page, the album page and the player. Circles before iOS 26; iOS 26 draws its own glass.")];
     [sections addObjectsFromArray:FZRPlayerOptionSections()];
     [sections addObjectsFromArray:@[
-        FZNotedSection(@"Album", @[circleActions, shuffle, download, meta], @"Changes show the next time a page opens."),
+        FZNotedSection(@"Album", @[circleActions, shuffle, download, meta, playlistPage], @"Changes show the next time a page opens."),
     ]];
     return [[FZModPage alloc] initWithTitle:@"Redesigned pages" intro:nil sections:sections footer:nil];
 }

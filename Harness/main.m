@@ -15,6 +15,7 @@
 #import "Settings/FZSettingsPage.h"
 #import "Settings/Kit/FZPage.h"
 #import "Lyrics/FZLockScreenLyrics.h"
+#import "Redesign/Player/FZRLyricsFetch.h"
 #import "ArtistBlock/FZArtistBlock.h"
 #import "Core/FZRemote.h"
 #import "Redesign/Player/FZRPlayer.h"
@@ -131,6 +132,22 @@ static void startLyricsDemo(void) {
     FZInstallCoverReuseFix();
     FZInstallScreenCensus();       // debug census + Swift probe, as in a debug device build
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessLyricsDemo"]) startLyricsDemo();
+    // -FZHarnessLyricsProbe "title|artist|album|seconds": asks each of taurus's sources on its own for that song.
+    NSArray *probe = [[NSUserDefaults.standardUserDefaults stringForKey:@"FZHarnessLyricsProbe"] componentsSeparatedByString:@"|"];
+    if (probe.count == 4) {
+        NSDictionary *info = @{MPMediaItemPropertyTitle: probe[0], MPMediaItemPropertyArtist: probe[1],
+                               MPMediaItemPropertyAlbumTitle: probe[2], MPMediaItemPropertyPlaybackDuration: @([probe[3] doubleValue])};
+        for (NSArray *source in FZRLyricsSources()) {
+            NSString *key = source[0];
+            if ([@[FZRLyricsAutomatic, @"navimus", @"server", FZRLyricsImported] containsObject:key]) continue;
+            NSString *song = [@"probe-" stringByAppendingString:key];
+            FZRSetLyricsSourceForSong(song, key);
+            FZRFetchLyrics(song, info, ^(FZSyncedLyrics *lyrics) {
+                NSLog(@"[harness] lyrics probe %@: %lu lines, first \"%@\"", key, (unsigned long)lyrics.lines.count,
+                      lyrics.lines.count > 3 ? lyrics.lines[3].text : @"");
+            });
+        }
+    }
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessShuffleProbe"]) {
         // Which MediaRemote option makes a shuffle event read "items" (MPShuffleTypeItems = 1).
         MPRemoteCommand *shuffle = MPRemoteCommandCenter.sharedCommandCenter.changeShuffleModeCommand;

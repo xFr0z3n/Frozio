@@ -75,6 +75,12 @@ class Handler(BaseHTTPRequestHandler):
             if not album:
                 return self.subsonic({"error": {"code": 70, "message": "Album not found"}}, ok=False)
             return self.subsonic({"album": album})
+        if endpoint == "getPlaylist":
+            # A playlist as Navidrome answers it: owner, songCount, duration, its songs under "entry", each with its cover.
+            songs = [dict(song, coverArt="al-%d" % song["track"], albumId="al-1") for song in ALBUMS["al-1"]["song"]] * 3
+            return self.subsonic({"playlist": {"id": query.get("id", ""), "name": "Harness Playlist", "owner": "Harness User",
+                                               "songCount": len(songs), "duration": sum(s["duration"] for s in songs),
+                                               "coverArt": "pl-1", "entry": songs}})
         if endpoint == "getCoverArt":
             size = max(32, min(int(query.get("size", "300")), 600))
             return self.reply(png(size, size), "image/png")

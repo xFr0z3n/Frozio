@@ -10,6 +10,7 @@
 // - the footer 20 pt above the safe area (34 at least): AirPlay, sleep timer, lyrics, queue.
 // Every button can be hidden (Frozio settings → Appearance → Redesigned pages).
 #import <AVKit/AVKit.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import "Redesign/Player/FZRPlayer.h"
@@ -544,6 +545,7 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
 @end
 
 @implementation FZRPlayerViewController {
+    NSString *_importingFor;   // the song an .lrc file is being picked for
     FZRArtworkField *_field;
     FZRKawarpView *_fluid;
     FZRRoundButton *_close, *_more;
@@ -1047,11 +1049,70 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
             [strongSelf->_lyrics follow:FZNowPlayingElapsed()];
             return;
         }
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No synced lyrics"
-            message:@"Neither NaviMus, your server nor LRCLIB has synced lyrics for this song." preferredStyle:UIAlertControllerStyleAlert];
+        NSString *source = FZRLyricsSourceForSong(song);
+        NSString *message = [source isEqualToString:FZRLyricsAutomatic]
+            ? @"Neither NaviMus, your server nor the online sources have synced lyrics for this song."
+            : @"The source chosen for this song has no synced lyrics for it. Choose another under ⋯ → Lyrics Source.";
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No synced lyrics" message:message preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Import .lrc File" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { [weakSelf importLRC]; }]];
         [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
         [strongSelf presentViewController:alert animated:YES completion:nil];
     });
+}
+
+// taurus's Lyrics Source, per song and kept for good (FZRSetLyricsSourceForSong): the lyrics reload from it at once.
+- (UIMenu *)lyricsSourceMenu {
+    NSString *song = FZNowPlayingSongID();
+    NSString *chosen = FZRLyricsSourceForSong(song), *chosenName = @"Automatic";
+    NSMutableArray *items = [NSMutableArray array];
+    __weak typeof(self) weakSelf = self;
+    for (NSArray<NSString *> *source in FZRLyricsSources()) {
+        NSString *key = source[0];
+        UIAction *action = [UIAction actionWithTitle:source[1] image:nil identifier:nil handler:^(UIAction *a) {
+            if ([key isEqualToString:FZRLyricsImported]) { [weakSelf importLRC]; return; }
+            [weakSelf chooseLyricsSource:key];
+        }];
+        if ([key isEqualToString:chosen]) { action.state = UIMenuElementStateOn; chosenName = source[1]; }
+        if (!song.length) action.attributes = UIMenuElementAttributesDisabled;
+        [items addObject:action];
+    }
+    UIMenu *menu = [UIMenu menuWithTitle:@"Lyrics Source" image:[UIImage systemImageNamed:@"text.quote"] identifier:nil options:0 children:items];
+    menu.subtitle = chosenName;
+    return menu;
+}
+
+- (void)chooseLyricsSource:(NSString *)key {
+    NSString *song = FZNowPlayingSongID();
+    if (!song.length) return;
+    FZRSetLyricsSourceForSong(song, key);
+    // Shown again from the new source (or its "no lyrics" answer).
+    if (_lyricsOpen) [self setLyricsOpen:NO];
+    [self toggleLyrics];
+}
+
+- (void)importLRC {
+    UTType *lrc = [UTType typeWithFilenameExtension:@"lrc"] ?: UTTypePlainText;
+    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[lrc, UTTypePlainText] asCopy:YES];
+    picker.delegate = (id<UIDocumentPickerDelegate>)self;
+    _importingFor = FZNowPlayingSongID();
+    [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    NSString *song = _importingFor;
+    NSString *text = urls.firstObject ? [NSString stringWithContentsOfURL:urls.firstObject encoding:NSUTF8StringEncoding error:nil] : nil;
+    if (!text) text = urls.firstObject ? [NSString stringWithContentsOfURL:urls.firstObject usedEncoding:NULL error:nil] : nil;
+    if (!song.length || !text || !FZRImportLRC(song, text)) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Couldn't import the lyrics"
+            message:@"The file has no timed lines ([mm:ss.xx] text)." preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    if ([song isEqualToString:FZNowPlayingSongID()]) {
+        if (_lyricsOpen) [self setLyricsOpen:NO];
+        [self toggleLyrics];
+    }
 }
 
 - (void)openNaviMusPlayer {
@@ -1192,7 +1253,7 @@ static UIAction *comingAction(NSString *title, NSString *symbol, NSString *subti
                                   children:@[lyricsDefault, comingAction(@"Lyrics shaders", nil, nil)]];
     lyrics.subtitle = @"Default";
     UIMenu *features = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline
-                                    children:@[[self speedMenu], automix, haptics, artwork, lyrics]];
+                                    children:@[[self speedMenu], automix, haptics, artwork, lyrics, [self lyricsSourceMenu]]];
 
     UIAction *love = [UIAction actionWithTitle:@"Love" image:[UIImage systemImageNamed:@"heart"] identifier:nil handler:^(UIAction *a) { [weakSelf love]; }];
     NSArray *repeatNames = @[@"Repeat: Off", @"Repeat: All", @"Repeat: One"];
