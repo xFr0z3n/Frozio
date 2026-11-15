@@ -43,7 +43,13 @@ Every borrowed file or block carries a header comment `// Adapted from <repo>/<p
 | `Source/Lyrics/FZLockScreenLyrics.m` | `taurus/tweak/Sources/Shared/LockScreenLyrics/LockScreenLyrics.x` @ fe3211c (renamed SG→FZ, Logos → FZHook, Spotify karaoke state → NaviMus's saved lyrics) | GPL-3.0 |
 | `Source/ArtistBlock/FZArtistSkip.m` | `taurus/tweak/Sources/Shared/ArtistBlock/ArtistSkip.x`, `ArtistBlock.m` @ fe3211c (renamed SG→FZ, Logos → FZHook, Spotify player → NaviMus's Now Playing info and next-track handler) | GPL-3.0 |
 | `Source/ArtistBlock/FZArtistBlockPage.m` | `taurus/tweak/Sources/Shared/ArtistBlock/ArtistBlockSettings.m` @ fe3211c (renamed SG→FZ, names instead of URIs, Block by name added) | GPL-3.0 |
-| `Source/Redesign/Album/FZRAlbumPage.m` | `taurus/tweak/Sources/Redesigned/Album/AlbumHeader.x`, `AlbumRows.x`, `Kit/SGRHeaderInfo.m`, `Kit/SGRActionRow.m` @ fe3211c (layout values and structure; rebuilt as a standalone page for NaviMus) | GPL-3.0 |
+| `Source/Redesign/Album/FZRAlbumPage.m` | `taurus/tweak/Sources/Redesigned/Album/AlbumHeader.x`, `AlbumField.x`, `AlbumRows.x`, `Kit/SGRHeaderInfo.m`, `Kit/SGRActionRow.m` @ fe3211c (layout values and structure; rebuilt as a standalone page for NaviMus) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRField.h` | `taurus/tweak/Sources/Redesigned/Kit/SGRField.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRField.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRField.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRFlow.h` | `taurus/tweak/Sources/Redesigned/Kit/SGRFlow.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRFlow.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRFlow.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRFluid.h` | `taurus/tweak/Sources/Redesigned/Kit/SGRFluid.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRFluid.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRFluid.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
 | `Source/Redesign/Kit/FZRAccent.m` | storage and picker from `taurus/tweak/Sources/Redesigned/Kit/SGRAccent.x` @ fe3211c (colour-swap hooks not ported) | GPL-3.0 |
 
 ## Build-time tools (not shipped)

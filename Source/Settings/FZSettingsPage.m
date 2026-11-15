@@ -7,6 +7,7 @@
 #import "Prefs/FZSettings.h"
 #import "Redesign/Kit/FZRAccent.h"
 #import "Redesign/FZRAppLook.h"
+#import "Redesign/Album/FZRAlbumPage.h"
 #import "Diagnostics/FZLibrarySchema.h"
 
 UIImage *FZLogoImage(void) {
@@ -286,7 +287,11 @@ UIViewController *FZMakeSettingsPage(void) {
                     @"navigation bars are the system's Liquid Glass; before iOS 26 they get the redesign's blur.";
     redesign.changed = ^(BOOL on) { FZOfferRestart(on == FZRRedesignActive() ? nil : @"The redesigned look"); };
 
-    NSMutableArray *appearance = [NSMutableArray arrayWithObjects:redesign, accent, resetAccent, inNaviMus, nil];
+    FZModRow *pages = FZPageRow(@"Redesigned pages", ^UIViewController *{ return FZRRedesignOptionsPage(); });
+    pages.subtitle = @"Buttons, circles and lines of the rebuilt pages.";
+    pages.symbol = @"slider.horizontal.3";
+
+    NSMutableArray *appearance = [NSMutableArray arrayWithObjects:redesign, pages, accent, resetAccent, inNaviMus, nil];
 #ifdef FROZIO_ICON_PICKER
     // Hidden: setAlternateIconName fails with NSOSStatusErrorDomain -54 on the user's re-signed
     // install, with loose PNGs and with catalog icons alike (docs/FEATURES.md, Known issues).

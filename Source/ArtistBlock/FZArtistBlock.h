@@ -25,8 +25,8 @@ NSArray<NSString *> *FZArtistsInCredit(NSString *credit);
 /// The artist credit of what NaviMus is playing, nil before it has reported one.
 NSString *FZPlayingArtistCredit(void);
 
-/// Hooks -[MPRemoteCommand addTargetWithHandler:] and -[MPNowPlayingInfoCenter setNowPlayingInfo:]
-/// (system classes, ObjC runtime only). Call before NaviMus's main() so its handler is seen.
+/// Follows NaviMus's Now Playing info and skips through its next-track handler, both from FZRemote.
+/// Call after FZInstallRemote.
 void FZInstallArtistBlock(void);
 
 UIViewController *FZArtistBlockPage(void);
