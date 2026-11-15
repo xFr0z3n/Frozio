@@ -369,6 +369,12 @@ private struct ArtistWrapper: View {
     }
 }
 
+private let standInAvatar: UIImage = UIGraphicsImageRenderer(size: CGSize(width: 26, height: 26)).image { context in
+    UIColor.systemOrange.setFill()
+    UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: 26, height: 26)).fill()
+    ("F" as NSString).draw(at: CGPoint(x: 8, y: 4), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 15), .foregroundColor: UIColor.white])
+}
+
 private struct SearchTab: View {
     @State private var text = ""
     var body: some View {
@@ -379,8 +385,10 @@ private struct SearchTab: View {
                 .searchable(text: $text, prompt: "Artists, Albums, Songs")
                 // NaviMus's account button at the top right of Search (the user's report, build 43).
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { NSLog("[harness] account tapped") } label: { Image(systemName: "person.crop.circle") }
+                    // As on device (log, build 47): a sort menu, then the account button drawn as a 26 pt picture.
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Menu { Button("Name") {} } label: { Image(systemName: "line.3.horizontal.decrease") }
+                        Button { NSLog("[harness] account tapped") } label: { Image(uiImage: standInAvatar).renderingMode(.original) }
                             .accessibilityLabel("Account")
                     }
                 }

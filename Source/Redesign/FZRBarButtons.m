@@ -62,6 +62,13 @@ static void collectItems(UIView *view, NSUInteger depth, NSMutableArray<UIView *
 // Where the button's glyph is: its image views (the back chevron), else the small views SwiftUI draws the glyph in
 // (⋯ and NaviMus's other items: their glyph isn't always at the middle of the item, build 42), else the middle.
 static CGPoint glyphCentre(UIView *item) {
+    // A UIKit button that isn't back (Search's account picture, device log build 47): its image view moves about
+    // while UIKit lays it out, and following it made the circle and the button jump; its middle is steady.
+    if ([NSStringFromClass(item.class) isEqualToString:@"_UIButtonBarButton"]) {
+        BOOL chevron = NO;
+        for (UIView *sub in item.subviews) chevron = chevron || [NSStringFromClass(sub.class) isEqualToString:@"_UIModernBarButton"];
+        if (!chevron) return CGPointMake(CGRectGetMidX(item.bounds), CGRectGetMidY(item.bounds));
+    }
     CGRect images = CGRectNull, leaves = CGRectNull;
     CGSize limit = item.bounds.size;
     NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithArray:item.subviews];
@@ -82,6 +89,25 @@ static CGPoint glyphCentre(UIView *item) {
     CGRect box = !CGRectIsNull(images) ? images : leaves;
     if (CGRectIsNull(box)) return CGPointMake(CGRectGetMidX(item.bounds), CGRectGetMidY(item.bounds));
     return CGPointMake(round(CGRectGetMidX(box) * 2) / 2, round(CGRectGetMidY(box) * 2) / 2);
+}
+
+// A button showing a picture rather than a glyph (Search's account: a UIImageView on device, a SwiftUI image view in
+// the harness): it keeps its colours.
+static BOOL holdsPicture(UIView *item) {
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithArray:item.subviews];
+    while (queue.count) {
+        UIView *view = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if (view.hidden || [view isKindOfClass:UIVisualEffectView.class]) continue;
+        if ([view isKindOfClass:UIImageView.class]) {
+            UIImage *image = ((UIImageView *)view).image;
+            if (image && !image.isSymbolImage && image.renderingMode != UIImageRenderingModeAlwaysTemplate && view.bounds.size.width >= 20) return YES;
+        } else if ([NSStringFromClass(view.class) hasSuffix:@"_UIGraphicsView"] && view.bounds.size.width >= 20 && view.bounds.size.height >= 20) {
+            return YES;
+        }
+        [queue addObjectsFromArray:view.subviews];
+    }
+    return NO;
 }
 
 static BOOL isFrozioBar(UINavigationBar *bar) {
@@ -135,8 +161,16 @@ static CGFloat baseX(UIView *item, UINavigationBar *bar) {
     return [item convertPoint:glyphCentre(item) toView:bar].x - item.transform.tx;
 }
 
+static void styleBar(UINavigationBar *bar);
+
 void FZRStyleBarButtons(UINavigationBar *bar) {
-    if (!FZRRedesignActive() || !bar.window || isFrozioBar(bar)) return;
+    static BOOL styling;
+    if (styling || !FZRRedesignActive() || !bar.window || isFrozioBar(bar)) return;
+    styling = YES;
+    @try { styleBar(bar); } @finally { styling = NO; }
+}
+
+static void styleBar(UINavigationBar *bar) {
     BOOL glass = !systemGlass();
     BOOL white = FZEnabled(FZRKeyBarWhite);
     UINavigationItemBackButtonDisplayMode mode = FZEnabled(FZRKeyBarBareBack) ? UINavigationItemBackButtonDisplayModeMinimal
@@ -264,7 +298,7 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
             if (ty != 0) for (UIView *v = item.superview; v && v != bar.superview; v = v.superview) if (v.clipsToBounds) v.clipsToBounds = NO;
             if (fabs(item.transform.tx - tx) > 0.5 || fabs(item.transform.ty - ty) > 0.5) item.transform = CGAffineTransformMakeTranslation(tx, ty);
             // White: every layer of the button but the glass; Frozio's own button keeps its look.
-            NSArray *filters = filter && role != FZRBarRoleFrozio ? @[filter] : nil;
+            NSArray *filters = filter && role != FZRBarRoleFrozio && !holdsPicture(item) ? @[filter] : nil;
             // Back: its circle sits inside the chevron's view, so the chevron's own images take the white instead.
             NSMutableArray<UIView *> *targets = [NSMutableArray arrayWithArray:item.subviews];
             UIView *backCircle = nil;
@@ -280,7 +314,10 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
             for (UIView *sub in targets) {
                 // Not the glass, and not UIKit's back-button mask: it masks the chevron while the bar changes, and a
                 // filtered mask left the chevron blank (harness).
-                if (sub == shape || [NSStringFromClass(sub.class) rangeOfString:@"MaskView"].location != NSNotFound) {
+                // Nor a picture (an account's photo or initials): only glyphs turn white.
+                BOOL picture = [sub isKindOfClass:UIImageView.class] && ((UIImageView *)sub).image && !((UIImageView *)sub).image.isSymbolImage
+                    && ((UIImageView *)sub).image.renderingMode != UIImageRenderingModeAlwaysTemplate;
+                if (sub == shape || picture || [NSStringFromClass(sub.class) rangeOfString:@"MaskView"].location != NSNotFound) {
                     if (objc_getAssociatedObject(sub, &kWhitenedKey)) { sub.layer.filters = nil; objc_setAssociatedObject(sub, &kWhitenedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
                     continue;
                 }
