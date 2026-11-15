@@ -7,6 +7,7 @@
 // Launch arguments: -FZHarnessLight YES asks for light mode the way NaviMus's appearance setting does
 // (preferredColorScheme), to check the redesign keeps it dark.
 import AppIntents
+import AVFoundation
 import MediaPlayer
 import SwiftUI
 import UIKit
@@ -249,7 +250,11 @@ private struct LibraryTab: View {
         NavigationStack {
             List {
                 ForEach(["Playlists", "Artists", "Albums", "Songs", "Genres", "Downloaded"], id: \.self) { name in
-                    NavigationLink(name) { LibraryCategory(name: name) }
+                    if name == "Albums" {
+                        NavigationLink(name) { StandInAlbumGrid().ignoresSafeArea(edges: .bottom).navigationTitle("Albums") }
+                    } else {
+                        NavigationLink(name) { LibraryCategory(name: name) }
+                    }
                 }
                 Section("Recently Added") {
                     ForEach(albums.prefix(5)) { AlbumRow(album: $0) }
@@ -265,7 +270,19 @@ private struct LibraryCategory: View {
     let name: String
     @AppStorage("libraryAlbumsOrder") private var albumType = "alphabeticalByName"
     var body: some View {
-        List(albums) { AlbumRow(album: $0) }
+        // Sections headed by a round chip, as NaviMus's library lists are (the user's screenshot, build 43: "2017").
+        List {
+            ForEach([("2017", albums.prefix(5)), ("2018", albums.dropFirst(5).prefix(5)), ("2019", albums.dropFirst(10))], id: \.0) { year, group in
+                Section {
+                    ForEach(Array(group)) { AlbumRow(album: $0) }
+                } header: {
+                    Text(year).font(.title2.bold()).foregroundStyle(.green)
+                        .frame(minWidth: 44, minHeight: 44).padding(.horizontal, 4)
+                        .background(Circle().fill(Color(white: 0.2)))
+                }
+            }
+        }
+            .listStyle(.plain)
             .navigationTitle(name)
             // As NaviMus does: the stored sort becomes getAlbumList2's type.
             .task(id: albumType) {
@@ -304,6 +321,13 @@ private struct SearchTab: View {
                 .listStyle(.plain)
                 .navigationTitle("Search")
                 .searchable(text: $text, prompt: "Artists, Albums, Songs")
+                // NaviMus's account button at the top right of Search (the user's report, build 43).
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { NSLog("[harness] account tapped") } label: { Image(systemName: "person.crop.circle") }
+                            .accessibilityLabel("Account")
+                    }
+                }
         }
     }
 }
@@ -446,12 +470,18 @@ struct StandInQueueItem { let id = UUID(); var song: StandInSong }
 @objc(_TtC7Arpeggi12AudioManager)
 final class StandInAudioManager: NSObject {
     static let shared = StandInAudioManager()
+    override init() {
+        super.init()
+        // As NaviMus's does (its interruption and offline-mode observers): Frozio finds it here.
+        NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption(_:)), name: AVAudioSession.interruptionNotification, object: nil)
+    }
+    @objc func handleInterruption(_ note: Notification) {}
     var _currentQueueItem: StandInQueueItem?
     var _primaryQueue: [StandInQueueItem] = []
     var _secondaryQueue: [StandInQueueItem] = []
     var _continuousQueue: [StandInQueueItem] = []
     var _queueHistory: [StandInQueueItem] = []
-    @objc dynamic func handleItemChanged() {}
+    @objc func handleItemChanged() {}
     @objc dynamic func updateCurrentRoute() {}
     @objc dynamic func playerDidFinishPlaying(_ note: Any?) {}
 
@@ -573,5 +603,61 @@ final class StandInPlayer {
             MPMediaItemPropertyPlaybackDuration: duration, MPMediaItemPropertyArtwork: artwork(id),
             MPNowPlayingInfoPropertyElapsedPlaybackTime: now(), MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
         ]
+    }
+}
+
+// NaviMus's album grid as its 1.6.1 types show it (AlbumsDiffableCollectionView, HostingCollectionViewCell<V> with a
+// `hostingController: UIHostingController<V>?` reused for every album), and its CoverArtView, which loads the cover
+// once when it appears (@State image): a reused cell keeps the previous album's cover, the user's bug (build 43).
+final class HostingCollectionViewCell<Content: View>: UICollectionViewCell {
+    var hostingController: UIHostingController<Content>?
+    func host(_ view: Content) {
+        if let hostingController {
+            hostingController.rootView = view
+        } else {
+            let controller = UIHostingController(rootView: view)
+            controller.view.backgroundColor = .clear
+            controller.view.frame = contentView.bounds
+            controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            contentView.addSubview(controller.view)
+            hostingController = controller
+        }
+    }
+}
+
+private struct StandInCoverArtView: View {
+    let index: Int
+    @State private var shown: Int?
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Color(hue: Double(shown ?? 0) / 40, saturation: 0.7, brightness: shown == nil ? 0.2 : 0.8))
+            .overlay(Text(shown.map { "#\($0)" } ?? "…").font(.headline).foregroundStyle(.white))
+            .overlay(alignment: .bottom) { Text("album \(index)").font(.caption).foregroundStyle(.white) }
+            .onAppear { shown = index }   // as NaviMus: loaded once, when it first appears
+    }
+}
+
+private struct StandInAlbumGrid: UIViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> UICollectionView {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 170, height: 170)
+        layout.minimumLineSpacing = 12
+        layout.sectionInset = UIEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
+        let view = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        view.backgroundColor = .black
+        view.register(HostingCollectionViewCell<StandInCoverArtView>.self, forCellWithReuseIdentifier: "album")
+        view.dataSource = context.coordinator
+        view.accessibilityIdentifier = "standin.albumGrid"
+        return view
+    }
+    func updateUIView(_ view: UICollectionView, context: Context) {}
+    final class Coordinator: NSObject, UICollectionViewDataSource {
+        func collectionView(_ view: UICollectionView, numberOfItemsInSection section: Int) -> Int { 40 }
+        func collectionView(_ view: UICollectionView, cellForItemAt path: IndexPath) -> UICollectionViewCell {
+            let cell = view.dequeueReusableCell(withReuseIdentifier: "album", for: path) as! HostingCollectionViewCell<StandInCoverArtView>
+            cell.host(StandInCoverArtView(index: path.item))
+            return cell
+        }
     }
 }

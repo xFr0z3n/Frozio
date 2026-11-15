@@ -19,6 +19,7 @@
 #import "Core/FZRemote.h"
 #import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/FZRLibrarySorts.h"
+void FZInstallCoverReuseFix(void);
 #import "Settings/FZSettingsEntry.h"
 #import "Redesign/FZRAppLook.h"
 #import "Diagnostics/FZScreenCensus.h"
@@ -127,6 +128,7 @@ static void startLyricsDemo(void) {
     FZInstallRemote();
     FZInstallArtistBlock();
     FZInstallLibrarySorts();
+    FZInstallCoverReuseFix();
     FZInstallScreenCensus();       // debug census + Swift probe, as in a debug device build
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessLyricsDemo"]) startLyricsDemo();
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessShuffleProbe"]) {

@@ -11,3 +11,6 @@ extern NSString *const FZRKeyBarBareBack;   // "fz.redesign.bar.bareBack": back 
 
 /// Styles `bar`'s buttons; called on every layout of NaviMus's navigation bars while the redesign is on.
 void FZRStyleBarButtons(UINavigationBar *bar);
+
+/// NaviMus's library section chips in the same glass (FZRLibraryChips.m; FZRKeyCircleOthers turns them off too).
+void FZRInstallLibraryChips(void);

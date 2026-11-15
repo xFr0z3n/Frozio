@@ -152,6 +152,27 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
     [leading sortUsingComparator:^NSComparisonResult(UIView *a, UIView *b) { return [@(baseX(a, bar)) compare:@(baseX(b, bar))]; }];
     [trailing sortUsingComparator:^NSComparisonResult(UIView *a, UIView *b) { return [@(baseX(b, bar)) compare:@(baseX(a, bar))]; }];
 
+#ifdef FROZIO_DEBUG
+    // Once per page: what the bar's buttons are, for the next device log (Search's account button, build 43).
+    static NSString *lastTitle;
+    NSString *pageKey = [NSString stringWithFormat:@"%@#%lu", bar.topItem.title ?: @"-", (unsigned long)items.count];
+    if (![pageKey isEqualToString:lastTitle]) {
+        lastTitle = pageKey;
+        NSMutableArray *names = [NSMutableArray array];
+        for (UIView *item in items) {
+            NSMutableArray *leafs = [NSMutableArray array];
+            NSMutableArray<UIView *> *walk = [NSMutableArray arrayWithArray:item.subviews];
+            while (walk.count && leafs.count < 8) {
+                UIView *v = walk.firstObject; [walk removeObjectAtIndex:0];
+                if (!v.subviews.count) [leafs addObject:[NSString stringWithFormat:@"%@%@", [NSStringFromClass(v.class) substringFromIndex:MAX(0, (NSInteger)NSStringFromClass(v.class).length - 24)],
+                                                         NSStringFromCGRect(v.frame)]];
+                [walk addObjectsFromArray:v.subviews];
+            }
+            [names addObject:[NSString stringWithFormat:@"%@ \"%@\" %@ [%@]", NSStringFromClass(item.class), labelOf(item), NSStringFromCGRect(item.frame), [leafs componentsJoinedByString:@", "]]];
+        }
+        FZLog("bar buttons: page %@ search=%d: %@", bar.topItem.title, bar.topItem.searchController != nil, [names componentsJoinedByString:@" | "]);
+    }
+#endif
     for (NSArray<UIView *> *group in @[leading, trailing]) {
         BOOL lead = group == leading;
         // chroma.pw's spacing (16 pt from the bar's sides, 8 pt apart) once any button of the side has a circle.
@@ -163,6 +184,9 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
             anyCircle = anyCircle || (glass && circleFor(role));
         }
         CGFloat edge = lead ? 16 : width - 16;
+        // On a page with a search field, the circles sit a little higher so they stay clear of it once the large
+        // title has collapsed (the user's screenshot, build 43: they rested on the field).
+        CGFloat lift = bar.topItem.searchController ? -4 : 0;
         for (NSUInteger i = 0; i < group.count; i++) {
             UIView *item = group[i];
             FZRBarRole role = (FZRBarRole)roles[i].integerValue;
@@ -205,7 +229,8 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
                 tx = round(target - baseX(item, bar));
                 edge += lead ? side + 8 : -(side + 8);
             }
-            if (fabs(item.transform.tx - tx) > 0.5 || item.transform.ty != 0) item.transform = CGAffineTransformMakeTranslation(tx, 0);
+            CGFloat ty = anyCircle ? lift : 0;
+            if (fabs(item.transform.tx - tx) > 0.5 || fabs(item.transform.ty - ty) > 0.5) item.transform = CGAffineTransformMakeTranslation(tx, ty);
             // White: every layer of the button but the glass; Frozio's own button keeps its look.
             NSArray *filters = filter && role != FZRBarRoleFrozio ? @[filter] : nil;
             // Back: its circle sits inside the chevron's view, so the chevron's own images take the white instead.

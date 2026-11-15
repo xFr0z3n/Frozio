@@ -214,17 +214,21 @@ static const CGFloat kThumbSide = 72, kThumbGap = 16, kTitleGap = 12, kLyricsTop
 @implementation FZRLyricsView {
     FZSyncedLyrics *_lyrics;
     NSString *_song;
-    NSMutableArray<UILabel *> *_labels;
+    NSMutableArray<UIView *> *_lines;     // each line's own view, which takes the blur (SGRKaraokeLineView's way)
     NSInteger _current;
     CFTimeInterval _browsed;
     CAGradientLayer *_fade;
 }
+// Room around a line's text inside its view, so its blur isn't cut off at the edges.
+static const CGFloat kBlurRoom = 12;
+
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
     self.showsVerticalScrollIndicator = NO;
     self.alwaysBounceVertical = YES;
     self.delegate = self;
-    _labels = [NSMutableArray array];
+    self.clipsToBounds = NO;
+    _lines = [NSMutableArray array];
     _current = -1;
     _fade = [CAGradientLayer layer];
     _fade.colors = @[(id)UIColor.clearColor.CGColor, (id)UIColor.blackColor.CGColor, (id)UIColor.blackColor.CGColor, (id)UIColor.clearColor.CGColor];
@@ -236,20 +240,27 @@ static const CGFloat kThumbSide = 72, kThumbGap = 16, kTitleGap = 12, kLyricsTop
     if (songID && [songID isEqualToString:_song] && _lyrics) return YES;
     _song = [songID copy];
     _lyrics = songID ? FZNaviMusSyncedLyrics(songID) : nil;
-    for (UILabel *label in _labels) [label removeFromSuperview];
-    [_labels removeAllObjects];
+    for (UIView *line in _lines) [line removeFromSuperview];
+    [_lines removeAllObjects];
     _current = -1;
     UIFont *font = [UIFont systemFontOfSize:kLyricsSize weight:UIFontWeightBold];
     for (FZLyricLine *line in _lyrics.lines) {
+        UIView *holder = [UIView new];
+        holder.backgroundColor = UIColor.clearColor;
+        holder.opaque = NO;
         UILabel *label = [UILabel new];
         label.numberOfLines = 0;
         label.text = line.text.length ? line.text : @"♪";
         label.font = font;
         label.textColor = FZRPrimary();
-        label.userInteractionEnabled = YES;
-        [label addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
-        [self addSubview:label];
-        [_labels addObject:label];
+        label.backgroundColor = UIColor.clearColor;
+        [holder addSubview:label];
+        [holder addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
+        Class cls = NSClassFromString(@"CAFilter");
+        SEL make = NSSelectorFromString(@"filterWithType:");
+        if ([cls respondsToSelector:make]) holder.layer.filters = @[((id (*)(id, SEL, NSString *))objc_msgSend)(cls, make, @"gaussianBlur")];
+        [self addSubview:holder];
+        [_lines addObject:holder];
     }
     self.contentOffset = CGPointZero;
     [self setNeedsLayout];
@@ -260,39 +271,46 @@ static const CGFloat kThumbSide = 72, kThumbGap = 16, kTitleGap = 12, kLyricsTop
     [super layoutSubviews];
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    _fade.frame = CGRectMake(0, self.contentOffset.y, self.bounds.size.width, self.bounds.size.height);
+    _fade.frame = CGRectMake(-kBlurRoom, self.contentOffset.y, self.bounds.size.width + 2 * kBlurRoom, self.bounds.size.height);
     [CATransaction commit];
     CGFloat width = self.bounds.size.width, y = self.bounds.size.height * kLyricsAnchor;
-    for (UILabel *label in _labels) {
+    for (UIView *holder in _lines) {
+        UILabel *label = holder.subviews.firstObject;
         CGFloat height = ceil([label sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].height);
-        CGRect frame = CGRectMake(0, y, width, height);
-        if (!CGRectEqualToRect(label.frame, frame)) label.frame = frame;
+        CGRect frame = CGRectMake(-kBlurRoom, y - kBlurRoom, width + 2 * kBlurRoom, height + 2 * kBlurRoom);
+        if (!CGRectEqualToRect(holder.frame, frame)) {
+            holder.frame = frame;
+            label.frame = CGRectMake(kBlurRoom, kBlurRoom, width, height);
+        }
         y += height + kLyricsGap;
     }
     CGSize size = CGSizeMake(width, y + self.bounds.size.height * (1 - kLyricsAnchor));
     if (!CGSizeEqualToSize(self.contentSize, size)) self.contentSize = size;
 }
-// The blur of a line `distance` lines from the sung one (CAFilter's gaussian blur, as SGRKaraokeView sets it).
-static void blurLabel(UILabel *label, CGFloat radius) {
-    if (radius <= 0.01) { label.layer.filters = nil; return; }
-    id filter = label.layer.filters.firstObject;
-    if (!filter) {
-        Class cls = NSClassFromString(@"CAFilter");
-        SEL make = NSSelectorFromString(@"filterWithType:");
-        if (![cls respondsToSelector:make]) return;
-        filter = ((id (*)(id, SEL, NSString *))objc_msgSend)(cls, make, @"gaussianBlur");
-        [filter setValue:@YES forKey:@"inputNormalizeEdges"];
-        label.layer.filters = @[filter];
-    }
-    [label.layer setValue:@(radius) forKeyPath:@"filters.gaussianBlur.inputRadius"];
+// A line's blur eases from wherever it is on screen (SGRKaraokeView's -setBlur:, 0.6 s).
+static void blurLine(UIView *holder, CGFloat radius, BOOL animated) {
+    if (!holder.layer.filters.count) return;
+    NSString *path = @"filters.gaussianBlur.inputRadius";
+    id shown = [holder.layer.presentationLayer valueForKeyPath:path];
+    [holder.layer setValue:@(radius) forKeyPath:path];
+    if (!animated) return;
+    CABasicAnimation *ease = [CABasicAnimation animationWithKeyPath:path];
+    ease.fromValue = [shown isKindOfClass:NSNumber.class] ? shown : @(radius);
+    ease.toValue = @(radius);
+    ease.duration = 0.6;
+    ease.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    [holder.layer addAnimation:ease forKey:@"blur"];
 }
 - (void)restyleAnimated:(BOOL)animated {
+    for (NSUInteger i = 0; i < _lines.count; i++) {
+        NSInteger distance = _current < 0 ? 1 : labs((NSInteger)i - _current);
+        UIView *holder = _lines[i];
+        blurLine(holder, MIN(kMaxBlur, kBlurPerLine * distance), animated);
+    }
     void (^apply)(void) = ^{
-        for (NSUInteger i = 0; i < self->_labels.count; i++) {
+        for (NSUInteger i = 0; i < self->_lines.count; i++) {
             NSInteger distance = self->_current < 0 ? 1 : labs((NSInteger)i - self->_current);
-            UILabel *label = self->_labels[i];
-            label.alpha = distance == 0 ? 1 : kLyricsDim;
-            blurLabel(label, MIN(kMaxBlur, kBlurPerLine * distance));
+            self->_lines[i].alpha = distance == 0 ? 1 : kLyricsDim;
         }
     };
     if (animated) [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
@@ -300,7 +318,7 @@ static void blurLabel(UILabel *label, CGFloat radius) {
     else apply();
 }
 - (void)tapped:(UITapGestureRecognizer *)tap {
-    NSUInteger index = [_labels indexOfObject:(UILabel *)tap.view];
+    NSUInteger index = [_lines indexOfObject:tap.view];
     if (index == NSNotFound || index >= _lyrics.lines.count || !self.seek) return;
     self.seek(MAX(0, (_lyrics.lines[index].start + _lyrics.offset) / 1000.0));
 }
@@ -317,8 +335,9 @@ static void blurLabel(UILabel *label, CGFloat radius) {
     [self restyleAnimated:YES];
     if (current < 0 || self.isDragging || self.isDecelerating || CACurrentMediaTime() - _browsed < kBrowseHold) return;
     [self layoutIfNeeded];
-    UILabel *label = _labels[(NSUInteger)current];
-    CGFloat target = MAX(0, MIN(CGRectGetMinY(label.frame) - self.bounds.size.height * kLyricsAnchor, self.contentSize.height - self.bounds.size.height));
+    UIView *holder = _lines[(NSUInteger)current];
+    CGFloat lineTop = CGRectGetMinY(holder.frame) + kBlurRoom;
+    CGFloat target = MAX(0, MIN(lineTop - self.bounds.size.height * kLyricsAnchor, self.contentSize.height - self.bounds.size.height));
     FZRAnimate(FZRMotionLayout, ^{ self.contentOffset = CGPointMake(0, target); [self layoutIfNeeded]; }, nil);
 }
 @end
@@ -571,6 +590,7 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     _queueList.hidden = YES;
     [view addSubview:_queueList];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(queueChanged) name:FZRQueueDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(queueChanged) name:FZNowPlayingDidChangeNotification object:nil];
 
     _title = [self label:UIFontTextStyleTitle1 weight:UIFontWeightBold color:FZRPrimary()];
     _artist = [self label:UIFontTextStyleBody weight:UIFontWeightRegular color:FZRSecondary()];

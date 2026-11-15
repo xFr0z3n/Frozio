@@ -13,6 +13,8 @@
 #import "Redesign/FZRNaviMusControls.h"
 #import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/FZRLibrarySorts.h"
+void FZInstallCoverReuseFix(void);
+extern NSString *const FZKeyCoverReuseFix;
 #import "Redesign/Data/FZServer.h"
 #import "Lyrics/FZLockScreenLyrics.h"
 #import "ArtistBlock/FZArtistBlock.h"
@@ -48,5 +50,6 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZInstallRemote();          // NaviMus's command handlers and Now Playing (after lyrics)
         FZInstallArtistBlock();
         FZInstallLibrarySorts();    // Year and Favourites in NaviMus's album sort menu (reads its switch live)
+        FZInstallCoverReuseFix();   // NaviMus's grids keep a reused cell's old cover (reads its switch live)
     }
 }
