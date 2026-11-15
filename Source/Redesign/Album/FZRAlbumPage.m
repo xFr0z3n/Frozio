@@ -6,6 +6,7 @@
 #import "Redesign/Kit/FZRTokens.h"
 #import "Redesign/Kit/FZRField.h"
 #import "Redesign/Kit/FZGlass.h"
+#import "Redesign/Kit/FZRGlass.h"
 #import "Redesign/FZRNaviMusControls.h"
 #import "Redesign/FZRTap.h"
 #import "Settings/Kit/FZModPage.h"
@@ -40,26 +41,16 @@ static const CGFloat kHairline = 0.5;
 @end
 
 @implementation FZRRoundButton {
-    UIVisualEffectView *_glass;
+    UIView *_glass;
+    BOOL _hasGlass;
 }
+static char kRoundGlassKey;
+
 - (instancetype)initWithSymbol:(NSString *)symbol pointSize:(CGFloat)size weight:(UIImageSymbolWeight)weight label:(NSString *)label {
     if (!(self = [super initWithFrame:CGRectZero])) return nil;
     self.isAccessibilityElement = YES;
     self.accessibilityLabel = label;
     self.accessibilityTraits = UIAccessibilityTraitButton;
-    // iOS 26: the system's glass. Before it, the redesign's controls fallback (material.glass.fallback for
-    // controls, SGRGlassInside): thin dark material with a faint ring, as chroma.pw shows on iOS 17 (its circle
-    // reads (37, 26, 23) on a (24, 10, 8) field, ring (58, 47, 44)).
-    BOOL glass = NO;
-    if (@available(iOS 26.0, *)) glass = YES;
-    _glass = [[UIVisualEffectView alloc] initWithEffect:glass ? FZGlassEffect() : [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark]];
-    _glass.userInteractionEnabled = NO;
-    _glass.clipsToBounds = YES;
-    if (!glass) {
-        _glass.layer.borderWidth = 1;
-        _glass.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
-    }
-    [self addSubview:_glass];
     _glyph = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol
         withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:size weight:weight]]];
     _glyph.tintColor = FZRPrimary();
@@ -71,16 +62,41 @@ static const CGFloat kHairline = 0.5;
 - (void)setCircled:(BOOL)circled {
     _circled = circled;
     _glass.hidden = !circled;
+    [self setNeedsLayout];
 }
+// The redesign's control glass, made the way taurus makes it (SGRGlassInside): iOS 26's Liquid Glass (interactive,
+// like the system's glass buttons), the thin dark material before it, a solid fill under Reduce Transparency.
 - (void)layoutSubviews {
     [super layoutSubviews];
-    _glass.frame = self.bounds;
-    FZShapeGlass(_glass, self.bounds.size.height / 2, YES);
+    CGFloat side = MIN(self.bounds.size.width, self.bounds.size.height);
+    if (_circled && side > 0) {
+        _glass = FZRGlassInside(self, &kRoundGlassKey, side);
+        _glass.hidden = NO;
+        if (!_hasGlass && [_glass isKindOfClass:UIVisualEffectView.class]) {
+            _hasGlass = YES;
+            UIVisualEffect *effect = ((UIVisualEffectView *)_glass).effect;
+            if ([effect respondsToSelector:NSSelectorFromString(@"setInteractive:")]) {
+                [effect setValue:@YES forKey:@"interactive"];
+                ((UIVisualEffectView *)_glass).effect = effect;
+            }
+            BOOL liquid = NO;
+            if (@available(iOS 26.0, *)) liquid = YES;
+            if (!liquid) {
+                // chroma.pw on iOS 17: a faint lighter ring around the material (measured (58, 47, 44) on (24, 10, 8)).
+                _glass.layer.borderWidth = 1;
+                _glass.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
+                _glass.layer.cornerRadius = side / 2;
+            }
+        }
+    } else if (_glass) {
+        _glass.hidden = YES;
+    }
     _glyph.frame = self.bounds;
+    [self bringSubviewToFront:_glyph];
 }
 - (void)setHighlighted:(BOOL)highlighted {
     [super setHighlighted:highlighted];
-    FZRAnimate(FZRMotionPress, ^{ self.alpha = highlighted ? 0.6 : 1; }, nil);
+    FZRAnimate(FZRMotionPress, ^{ self.glyph.alpha = highlighted ? 0.6 : 1; }, nil);
 }
 @end
 
@@ -189,7 +205,8 @@ static const CGFloat kHairline = 0.5;
     static const CGFloat periods[3] = {0.47, 0.39, 0.53};
     for (NSUInteger i = 0; i < _bars.count; i++) {
         [_bars[i] removeAnimationForKey:@"bounce"];
-        if (!moving || FZRReduceMotion()) continue;
+        // Moving even with Reduce Motion on, as chroma.pw's do (three small bars).
+        if (!moving) continue;
         CAKeyframeAnimation *bounce = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale.y"];
         bounce.values = @[@0.3, @1.0, @0.5, @0.85, @0.3];
         bounce.duration = periods[i] * 4;
@@ -430,6 +447,7 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     NSArray<NSDictionary *> *_songs;
     NSSet<NSString *> *_songIDs;
     id _nowPlayingObserver;
+    BOOL _shuffleOn;
 }
 
 - (instancetype)initWithAlbumID:(NSString *)albumID naviMusPage:(UIViewController *)naviMusPage {
@@ -485,6 +503,7 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { [weakSelf showPlayback]; }];
     [self applyOptions];
     [self load];
+    FZLog("redesign album: page for %@ (Reduce Motion %d, Reduce Transparency %d)", _albumID, FZRReduceMotion(), FZRReduceTransparency());
 }
 
 - (void)applyOptions {
@@ -611,8 +630,10 @@ static NSString *string(id value) {
 - (void)showPlayback {
     BOOL current = [self albumIsCurrent], playing = current && FZNowPlayingIsPlaying();
     _header.play.playing = playing;
+    if (!current && FZNowPlayingSongID()) _shuffleOn = NO;   // another album took over
     MPChangeShuffleModeCommand *shuffle = MPRemoteCommandCenter.sharedCommandCenter.changeShuffleModeCommand;
-    _header.shuffle.glyph.tintColor = current && shuffle.currentShuffleType != MPShuffleTypeOff ? FZRAccent() : FZRPrimary();
+    BOOL shuffled = _shuffleOn || (current && shuffle.currentShuffleType != MPShuffleTypeOff);
+    _header.shuffle.glyph.tintColor = shuffled ? FZRAccent() : FZRPrimary();
     NSString *song = FZNowPlayingSongID();
     for (FZRTrackCell *cell in _table.visibleCells) {
         NSIndexPath *path = [_table indexPathForCell:cell];
@@ -641,46 +662,59 @@ static NSString *string(id value) {
             || FZRemoteSend(FZNowPlayingIsPlaying() ? center.pauseCommand : center.playCommand);
         if (done) return;
     }
+    _shuffleOn = NO;
     __weak typeof(self) weakSelf = self;
     FZRNaviMusPlay(@"Album", _albumID, ^(BOOL ok, NSString *why) { [weakSelf report:@"play the album" ok:ok why:why]; });
 }
 
-// Shuffle, as Control Center does it: NaviMus plays the album (unless it already is), then its own shuffle
-// handler turns shuffle on (MediaRemote shuffle mode 3 = items, 1 = off; checked in the harness). Tapped again
-// while this album shuffles, it turns shuffle off.
+// Shuffle: NaviMus's own shuffle on its album page (its header's left button, which NaviMus labels "Repeat"; device
+// log, build 37), so the album shuffle-plays exactly as in NaviMus. NaviMus doesn't report its shuffle state to the
+// system, so the page keeps it: on until the album is played in order or stops being the one playing. Tapped while
+// on, NaviMus's own shuffle handler turns it off (MediaRemote shuffle mode 1).
 - (void)shuffle {
-    MPRemoteCommand *command = MPRemoteCommandCenter.sharedCommandCenter.changeShuffleModeCommand;
-    BOOL on = [self albumIsCurrent] && MPRemoteCommandCenter.sharedCommandCenter.changeShuffleModeCommand.currentShuffleType != MPShuffleTypeOff;
-    __weak typeof(self) weakSelf = self;
-    void (^setShuffle)(BOOL) = ^(BOOL shuffled) {
-        BOOL ok = FZRemoteSendWithOptions(command, @{@"kMRMediaRemoteOptionShuffleMode": shuffled ? @3 : @1});
-        FZLog("redesign album: NaviMus's shuffle %@ → %d", shuffled ? @"on" : @"off", ok);
-        [weakSelf report:@"shuffle" ok:ok why:@"NaviMus didn't take the shuffle command."];
-        [weakSelf showPlayback];
-    };
-    if (on) { setShuffle(NO); return; }
-    if ([self albumIsCurrent]) { setShuffle(YES); return; }
-    FZRNaviMusPlay(@"Album", _albumID, ^(BOOL ok, NSString *why) {
-        if (!ok) { [weakSelf report:@"shuffle the album" ok:NO why:why]; return; }
-        setShuffle(YES);
-    });
-}
-
-// NaviMus's own Download on its page; failing that, its own ⋯ menu's Download item.
-- (void)download {
-    if (FZRActivateNaviMusControl(_naviMusPage, nil, @[@"Download", @"Downloaded", @"Remove Download"])) return;
-    if (![self openNaviMusMenu]) {
-        [self report:@"download" ok:NO why:@"NaviMus's download button wasn't found on its album page."];
+    if (_shuffleOn && [self albumIsCurrent]) {
+        BOOL ok = FZRemoteSendWithOptions(MPRemoteCommandCenter.sharedCommandCenter.changeShuffleModeCommand,
+                                          @{@"kMRMediaRemoteOptionShuffleMode": @1});
+        FZLog("redesign album: NaviMus's shuffle off → %d", ok);
+        _shuffleOn = NO;
+        [self showPlayback];
         return;
     }
+    if (!FZRActivateNaviMusControl(_naviMusPage, nil, @[@"Shuffle", @"Repeat"])) {
+        [self report:@"shuffle" ok:NO why:@"NaviMus's shuffle button wasn't found on its album page."];
+        return;
+    }
+    _shuffleOn = YES;
+    [self showPlayback];
+}
+
+// Download: the Download item of NaviMus's own ⋯ menu (its album download lives there). A SwiftUI menu has no items
+// until it shows (its button carries an empty placeholder menu, and so does its interaction's configuration;
+// checked in the harness), so the menu opens and its item is pressed the moment it exists.
+- (void)download {
+    UIWindow *window = self.view.window;
+    CGPoint more = [_more convertPoint:CGPointMake(CGRectGetMidX(_more.bounds), CGRectGetMidY(_more.bounds)) toView:window];
+    NSArray *labels = @[@"Download", @"Download Album", @"Download All", @"Remove Download", @"Remove Downloads", @"Delete Download"];
+    if (FZRPerformMenuAction(window, more, labels)) return;
+    if (FZRActivateNaviMusControl(_naviMusPage, nil, @[@"Download", @"Downloaded", @"Remove Download"])) return;
+    if (!FZRTap(window, more)) {
+        [self report:@"download" ok:NO why:@"NaviMus's ⋯ menu couldn't be opened."];
+        return;
+    }
+    __block NSUInteger tries = 0;
+    __block void (^pick)(void);
     __weak typeof(self) weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        // Left open when the menu calls it something else: the user sees NaviMus's own menu and picks.
-        if (!FZRActivateMenuItem(@[@"Download", @"Download Album", @"Download All", @"Remove Download", @"Remove Downloads"])) {
-            FZLogError("redesign album: NaviMus's menu has no Download item; left open");
+    pick = ^{
+        if (FZRActivateMenuItem(labels) || !weakSelf) { pick = nil; return; }
+        if (++tries < 40) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (pick) pick(); });
+        } else {
+            FZLogError("redesign album: NaviMus's menu has no Download item it would show; left open");
+            pick = nil;
         }
-        (void)weakSelf;
-    });
+    };
+    // SwiftUI builds the menu's items only as it shows them, so the item is pressed the moment it exists.
+    dispatch_async(dispatch_get_main_queue(), ^{ if (pick) pick(); });
 }
 
 // NaviMus's own ⋯ sits under the rebuilt page's (its bar takes the touch); this runs only if it didn't.

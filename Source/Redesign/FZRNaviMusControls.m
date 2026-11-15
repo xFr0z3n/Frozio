@@ -224,6 +224,116 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
     return NO;
 }
 
+#pragma mark - a menu's action without showing the menu
+
+static BOOL titleMatches(NSString *title, NSArray<NSString *> *labels) {
+    for (NSString *wanted in labels) {
+        if ([title caseInsensitiveCompare:wanted] == NSOrderedSame || [title hasPrefix:[wanted stringByAppendingString:@" "]]) return YES;
+    }
+    return NO;
+}
+
+// SwiftUI fills its menus lazily: a UIDeferredMenuElement whose provider hands its elements to a completion, as
+// UIKit asks it when the menu opens (SwiftUI answers at once).
+static NSArray<UIMenuElement *> *resolved(UIMenuElement *element) {
+    if (![element isKindOfClass:NSClassFromString(@"UIDeferredMenuElement")]) return @[element];
+    void (^provider)(void (^)(NSArray<UIMenuElement *> *)) = nil;
+    for (NSString *key in @[@"elementProvider", @"_elementProvider", @"provider", @"_provider"]) {
+        @try { provider = [element valueForKey:key]; } @catch (NSException *e) { provider = nil; }
+        if (provider) break;
+    }
+#ifdef FROZIO_DEBUG
+    if (!provider) {
+        unsigned count = 0;
+        Ivar *ivars = class_copyIvarList(object_getClass(element), &count);
+        NSMutableArray *names = [NSMutableArray array];
+        for (unsigned i = 0; i < count; i++) [names addObject:@(ivar_getName(ivars[i]))];
+        free(ivars);
+        unsigned pc = 0;
+        objc_property_t *props = class_copyPropertyList(object_getClass(element), &pc);
+        for (unsigned i = 0; i < pc; i++) [names addObject:[@"." stringByAppendingString:@(property_getName(props[i]))]];
+        free(props);
+        FZLog("redesign: deferred menu element %@ has %@", NSStringFromClass(object_getClass(element)), names);
+    }
+#endif
+    if (!provider) return @[];
+    __block NSArray<UIMenuElement *> *elements = @[];
+    provider(^(NSArray<UIMenuElement *> *answer) { elements = answer ?: @[]; });
+    return elements;
+}
+
+static UIAction *actionIn(UIMenu *menu, NSArray<NSString *> *labels, NSMutableArray<NSString *> *titles) {
+    NSMutableArray<UIMenuElement *> *children = [NSMutableArray array];
+    for (UIMenuElement *child in menu.children) [children addObjectsFromArray:resolved(child)];
+    if (!children.count) FZLog("redesign: menu %@ has %lu children (%@)", menu.title, (unsigned long)menu.children.count,
+                               [[menu.children valueForKey:@"class"] componentsJoinedByString:@","]);
+    for (UIMenuElement *element in children) {
+        if ([element isKindOfClass:UIMenu.class]) {
+            UIAction *inner = actionIn((UIMenu *)element, labels, titles);
+            if (inner) return inner;
+        } else if ([element isKindOfClass:UIAction.class]) {
+            [titles addObject:element.title ?: @"?"];
+            if (titleMatches(element.title, labels)) return (UIAction *)element;
+        }
+    }
+    return nil;
+}
+
+// The menu a control shows: a UIButton's own, or the one its context-menu interaction's delegate provides.
+static UIMenu *menuOf(UIView *view, CGPoint pointInWindow) {
+    // SwiftUI's menu buttons carry an empty placeholder menu and build the real one when the interaction asks.
+    UIMenu *own = [view isKindOfClass:UIButton.class] ? ((UIButton *)view).menu : nil;
+    if (own.children.count) return own;
+    for (id<UIInteraction> interaction in view.interactions) {
+        if (![interaction isKindOfClass:UIContextMenuInteraction.class]) continue;
+        UIContextMenuInteraction *menuInteraction = (UIContextMenuInteraction *)interaction;
+        id<UIContextMenuInteractionDelegate> delegate = menuInteraction.delegate;
+        if (![delegate respondsToSelector:@selector(contextMenuInteraction:configurationForMenuAtLocation:)]) continue;
+        CGPoint location = [view convertPoint:pointInWindow fromView:nil];
+        UIContextMenuConfiguration *configuration = [delegate contextMenuInteraction:menuInteraction configurationForMenuAtLocation:location];
+        UIContextMenuActionProvider provider = nil;
+        @try { provider = [configuration valueForKey:@"actionProvider"]; } @catch (NSException *e) { provider = nil; }
+        UIMenu *menu = provider ? provider(@[]) : nil;
+        if (menu) return menu;
+    }
+    return nil;
+}
+
+static BOOL perform(UIAction *action, UIView *sender) {
+    SEL performSel = NSSelectorFromString(@"performWithSender:target:");
+    if ([action respondsToSelector:performSel]) {
+        ((void (*)(id, SEL, id, id))objc_msgSend)(action, performSel, sender, nil);
+        return YES;
+    }
+    void (^handler)(UIAction *) = nil;
+    @try { handler = [action valueForKey:@"handler"]; } @catch (NSException *e) { handler = nil; }
+    if (!handler) return NO;
+    handler(action);
+    return YES;
+}
+
+BOOL FZRPerformMenuAction(UIWindow *window, CGPoint point, NSArray<NSString *> *labels) {
+    UIView *hit = [window hitTest:point withEvent:nil];
+    NSMutableArray<NSString *> *walked = [NSMutableArray array], *titles = [NSMutableArray array];
+    for (UIView *view = hit; view && view != window; view = view.superview) {
+        NSMutableArray *kinds = [NSMutableArray array];
+        for (id<UIInteraction> interaction in view.interactions) [kinds addObject:NSStringFromClass([(NSObject *)interaction class])];
+        [walked addObject:[NSString stringWithFormat:@"%@%@%@", [NSStringFromClass(view.class) substringToIndex:MIN(40, NSStringFromClass(view.class).length)],
+            kinds.count ? [NSString stringWithFormat:@"{%@}", [kinds componentsJoinedByString:@","]] : @"",
+            [view isKindOfClass:UIButton.class] ? [NSString stringWithFormat:@"[menu %d primary %d]", ((UIButton *)view).menu != nil, ((UIButton *)view).showsMenuAsPrimaryAction] : @""]];
+        UIMenu *menu = menuOf(view, point);
+        if (!menu) continue;
+        UIAction *action = actionIn(menu, labels, titles);
+        if (!action) continue;
+        BOOL done = perform(action, view);
+        FZLog("redesign: NaviMus menu action \"%@\" of %@ performed=%d", action.title, NSStringFromClass(view.class), done);
+        if (done) return YES;
+    }
+    FZLog("redesign: no menu action %@ under %@ (walked %@; titles seen %@)", [labels componentsJoinedByString:@"/"],
+          NSStringFromCGPoint(point), [walked componentsJoinedByString:@" < "], [titles componentsJoinedByString:@", "]);
+    return NO;
+}
+
 BOOL FZRActivateMenuItem(NSArray<NSString *> *labels) {
     NSMutableArray *elements = [NSMutableArray array];
     NSHashTable *seen = [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality];
@@ -235,15 +345,25 @@ BOOL FZRActivateMenuItem(NSArray<NSString *> *labels) {
         for (id element in elements) {
             NSString *label = [element accessibilityLabel];
             if (![label isEqualToString:wanted] && ![label hasPrefix:[wanted stringByAppendingString:@" "]]) continue;
+            if (!([element accessibilityTraits] & UIAccessibilityTraitButton)) continue;
             BOOL done = [element accessibilityActivate];
-            FZLog("redesign: menu item %@ activated=%d", describe(element), done);
+            if (!done && [element isKindOfClass:UIView.class] && ((UIView *)element).window) {
+                UIView *view = element;
+                done = FZRTap(view.window, [view convertPoint:CGPointMake(CGRectGetMidX(view.bounds), CGRectGetMidY(view.bounds)) toView:nil]);
+            }
+            FZLog("redesign: menu item %@ pressed=%d", describe(element), done);
             if (done) return YES;
         }
     }
 #ifdef FROZIO_DEBUG
     NSMutableArray *names = [NSMutableArray array];
     for (id element in elements) [names addObject:describe(element)];
-    FZLog("redesign: no menu item %@ among %@", [labels componentsJoinedByString:@"/"], [names componentsJoinedByString:@", "]);
+    NSMutableArray *windows = [NSMutableArray array];
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) [windows addObject:NSStringFromClass(window.class)];
+    }
+    FZLog("redesign: no menu item %@ in windows %@ among %@", [labels componentsJoinedByString:@"/"], windows, [names componentsJoinedByString:@", "]);
 #endif
     return NO;
 }
