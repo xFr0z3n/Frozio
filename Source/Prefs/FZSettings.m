@@ -43,6 +43,8 @@ NSString *const FZSettingsKeyRedesign = @"fz.redesign";
         @"fz.redesign.player.download": @NO,
         @"fz.redesign.player.rightSlot": @1,
         @"fz.redesign.player.sleep": @YES,
+        // The cover stays its size on pause (the user, 2026-11-15: it zoomed in and out).
+        @"fz.redesign.player.shrink": @NO,
     }];
 }
 

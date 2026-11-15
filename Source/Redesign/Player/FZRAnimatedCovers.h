@@ -18,6 +18,9 @@ extern NSNotificationName const FZRAnimatedCoversDidChangeNotification;   // the
 BOOL FZRAnimatedCoversConfigured(void);
 /// The file name a cover would match, without fetching anything ("Yeat - 2093.mp4"), nil for none. Exposed for tests.
 NSString *FZRAnimatedCoverMatch(NSArray<NSString *> *fileNames, NSString *artist, NSString *album);
+/// Albums the user keeps on their still cover (the player's ⋯ → Artwork), kept for good, by album title.
+BOOL FZRAnimatedCoverOff(NSString *album);
+void FZRSetAnimatedCoverOff(NSString *album, BOOL off);
 /// The album's animated cover as a local file, downloading it the first time; nil when there is none. Main thread.
 void FZRAnimatedCoverFor(NSString *artist, NSString *album, void (^completion)(NSURL *file));
 

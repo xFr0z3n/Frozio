@@ -26,6 +26,8 @@
 #import "Redesign/Player/FZRLyricsFetch.h"
 #import "Redesign/Player/FZRAnimatedCovers.h"
 #import "Redesign/Kit/FZRVisualizer.h"
+#import "Redesign/Player/FZRLyricsStyle.h"
+#import "Prefs/FZSettings.h"
 #import "Settings/Kit/FZModPage.h"
 #import "Settings/Kit/FZKitCore.h"
 #import "Core/FZRemote.h"
@@ -219,9 +221,12 @@ static const CGFloat kThumbSide = 72, kThumbGap = 16, kTitleGap = 12, kLyricsTop
 @property (nonatomic, copy) void (^seek)(NSTimeInterval seconds);
 - (BOOL)showSong:(NSString *)songID;
 - (void)follow:(NSTimeInterval)seconds;
+/// Builds the lines again in the chosen style (FZRLyricsStyle.current).
+- (void)restyle;
 @end
 
 @implementation FZRLyricsView {
+    FZRLyricsStyle *_style;
     FZSyncedLyrics *_lyrics;
     NSString *_song;
     NSMutableArray<UIView *> *_lines;     // each line's own view, which takes the blur (SGRKaraokeLineView's way)
@@ -253,16 +258,23 @@ static const CGFloat kBlurRoom = 12;
     for (UIView *line in _lines) [line removeFromSuperview];
     [_lines removeAllObjects];
     _current = -1;
-    UIFont *font = [UIFont systemFontOfSize:kLyricsSize weight:UIFontWeightBold];
+    _style = FZRLyricsStyle.current;
     for (FZLyricLine *line in _lyrics.lines) {
         UIView *holder = [UIView new];
         holder.backgroundColor = UIColor.clearColor;
         holder.opaque = NO;
+        // The style's marker behind the sung line (Highlighter's highlight, Subtitles' pill).
+        UIView *mark = [UIView new];
+        mark.tag = 2;
+        mark.hidden = YES;
+        mark.layer.cornerCurve = kCACornerCurveContinuous;
+        [holder addSubview:mark];
         UILabel *label = [UILabel new];
+        label.tag = 1;
         label.numberOfLines = 0;
-        label.text = line.text.length ? line.text : @"♪";
-        label.font = font;
-        label.textColor = FZRPrimary();
+        NSString *text = line.text.length ? line.text : @"♪";
+        label.text = _style.uppercase ? text.uppercaseString : text;
+        label.textAlignment = _style.alignment;
         label.backgroundColor = UIColor.clearColor;
         [holder addSubview:label];
         [holder addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
@@ -283,18 +295,30 @@ static const CGFloat kBlurRoom = 12;
     [CATransaction setDisableActions:YES];
     _fade.frame = CGRectMake(-kBlurRoom, self.contentOffset.y, self.bounds.size.width + 2 * kBlurRoom, self.bounds.size.height);
     [CATransaction commit];
-    CGFloat width = self.bounds.size.width, y = self.bounds.size.height * kLyricsAnchor;
+    CGFloat anchor = _style ? _style.anchor : kLyricsAnchor;
+    CGFloat width = self.bounds.size.width, y = self.bounds.size.height * anchor;
     for (UIView *holder in _lines) {
-        UILabel *label = holder.subviews.firstObject;
+        UILabel *label = [holder viewWithTag:1];
         CGFloat height = ceil([label sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].height);
         CGRect frame = CGRectMake(-kBlurRoom, y - kBlurRoom, width + 2 * kBlurRoom, height + 2 * kBlurRoom);
         if (!CGRectEqualToRect(holder.frame, frame)) {
             holder.frame = frame;
             label.frame = CGRectMake(kBlurRoom, kBlurRoom, width, height);
         }
+        UIView *mark = [holder viewWithTag:2];
+        if (_style.pill) {
+            CGFloat textWidth = MIN(width, ceil([label sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].width));
+            mark.frame = CGRectMake(kBlurRoom + (width - textWidth) / 2 - 10, kBlurRoom - 4, textWidth + 20, height + 8);
+            mark.layer.cornerRadius = MIN(18, (height + 8) / 2);
+        } else {
+            CGFloat textWidth = MIN(width, ceil([label sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].width));
+            CGFloat x = _style.alignment == NSTextAlignmentCenter ? (width - textWidth) / 2 : 0;
+            mark.frame = CGRectMake(kBlurRoom + x - 6, kBlurRoom - 2, textWidth + 12, height + 4);
+            mark.layer.cornerRadius = 4;
+        }
         y += height + kLyricsGap;
     }
-    CGSize size = CGSizeMake(width, y + self.bounds.size.height * (1 - kLyricsAnchor));
+    CGSize size = CGSizeMake(width, y + self.bounds.size.height * (1 - anchor));
     if (!CGSizeEqualToSize(self.contentSize, size)) self.contentSize = size;
 }
 // A line's blur eases from wherever it is on screen (SGRKaraokeView's -setBlur:, 0.6 s).
@@ -311,16 +335,65 @@ static void blurLine(UIView *holder, CGFloat radius, BOOL animated) {
     ease.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
     [holder.layer addAnimation:ease forKey:@"blur"];
 }
+// A line's text in the style: the sung line in its colour (or gradient), the others in the unsung colour or as outlines.
+- (void)paintLine:(UIView *)holder sung:(BOOL)sung {
+    UILabel *label = [holder viewWithTag:1];
+    FZRLyricsStyle *style = _style;
+    UIFont *font = [style fontOfSize:kLyricsSize];
+    NSMutableDictionary *attributes = [NSMutableDictionary dictionaryWithObject:font forKey:NSFontAttributeName];
+    if (style.tracking != 0) attributes[NSKernAttributeName] = @(style.tracking * kLyricsSize);
+    NSMutableParagraphStyle *paragraph = [NSMutableParagraphStyle new];
+    paragraph.alignment = style.alignment;
+    attributes[NSParagraphStyleAttributeName] = paragraph;
+    if (sung) {
+        attributes[NSForegroundColorAttributeName] = [style sungColorForLineHeight:font.lineHeight];
+    } else if (style.outline) {
+        attributes[NSForegroundColorAttributeName] = UIColor.clearColor;
+        attributes[NSStrokeColorAttributeName] = style.unsung;
+        attributes[NSStrokeWidthAttributeName] = @3;
+    } else {
+        attributes[NSForegroundColorAttributeName] = style.unsung ?: FZRPrimary();
+    }
+    label.attributedText = [[NSAttributedString alloc] initWithString:label.text ?: @"" attributes:attributes];
+    if (style.glow) {
+        label.layer.shadowColor = style.glow.CGColor;
+        label.layer.shadowRadius = style.glowRadius;
+        label.layer.shadowOffset = CGSizeZero;
+        label.layer.shadowOpacity = sung ? 1 : 0.35;
+    } else {
+        label.layer.shadowOpacity = 0;
+    }
+    UIView *mark = [holder viewWithTag:2];
+    mark.backgroundColor = style.mark;
+    mark.hidden = !(sung && style.mark);
+}
+
+- (void)restyle {
+    NSString *song = _song;
+    _song = nil;
+    _lyrics = nil;
+    [self showSong:song];
+}
+
 - (void)restyleAnimated:(BOOL)animated {
+    CGFloat perLine = kBlurPerLine * (_style ? _style.blur : 1), dim = _style ? _style.dim : kLyricsDim;
     for (NSUInteger i = 0; i < _lines.count; i++) {
         NSInteger distance = _current < 0 ? 1 : labs((NSInteger)i - _current);
         UIView *holder = _lines[i];
-        blurLine(holder, MIN(kMaxBlur, kBlurPerLine * distance), animated);
+        blurLine(holder, MIN(kMaxBlur, perLine * distance), animated);
+        BOOL sung = distance == 0 && _current >= 0;
+        NSNumber *was = objc_getAssociatedObject(holder, @selector(paintLine:sung:));
+        if (!was || was.boolValue != sung) {
+            objc_setAssociatedObject(holder, @selector(paintLine:sung:), @(sung), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            if (animated) [UIView transitionWithView:holder duration:0.25 options:UIViewAnimationOptionTransitionCrossDissolve | UIViewAnimationOptionAllowUserInteraction
+                                          animations:^{ [self paintLine:holder sung:sung]; } completion:nil];
+            else [self paintLine:holder sung:sung];
+        }
     }
     void (^apply)(void) = ^{
         for (NSUInteger i = 0; i < self->_lines.count; i++) {
             NSInteger distance = self->_current < 0 ? 1 : labs((NSInteger)i - self->_current);
-            self->_lines[i].alpha = distance == 0 ? 1 : kLyricsDim;
+            self->_lines[i].alpha = distance == 0 ? 1 : dim;
         }
     };
     if (animated) [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
@@ -347,7 +420,7 @@ static void blurLine(UIView *holder, CGFloat radius, BOOL animated) {
     [self layoutIfNeeded];
     UIView *holder = _lines[(NSUInteger)current];
     CGFloat lineTop = CGRectGetMinY(holder.frame) + kBlurRoom;
-    CGFloat target = MAX(0, MIN(lineTop - self.bounds.size.height * kLyricsAnchor, self.contentSize.height - self.bounds.size.height));
+    CGFloat target = MAX(0, MIN(lineTop - self.bounds.size.height * (_style ? _style.anchor : kLyricsAnchor), self.contentSize.height - self.bounds.size.height));
     FZRAnimate(FZRMotionLayout, ^{ self.contentOffset = CGPointMake(0, target); [self layoutIfNeeded]; }, nil);
 }
 @end
@@ -687,12 +760,12 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     _animated.layer.cornerRadius = FZRRadiusArtwork;
     _animated.layer.cornerCurve = kCACornerCurveContinuous;
     [_plate addSubview:_animated];
-    _visualizer = [FZRVisualizerView new];
-    _visualizer.clipsToBounds = YES;
-    _visualizer.layer.cornerRadius = FZRRadiusArtwork;
-    _visualizer.layer.cornerCurve = kCACornerCurveContinuous;
+    // The Visualizer behind the whole player, under the cover (as chroma.pw's shaders are).
+    _visualizer = [[FZRVisualizerView alloc] initWithFrame:view.bounds];
+    _visualizer.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _visualizer.dim = 0.85;
     _visualizer.hidden = YES;
-    [_plate addSubview:_visualizer];
+    [view insertSubview:_visualizer belowSubview:_animatedScrim];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(animatedCoversChanged) name:FZRAnimatedCoversDidChangeNotification object:nil];
 
     _lyrics = [FZRLyricsView new];
@@ -977,11 +1050,15 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     _cover.frame = _plate.bounds;
     _animated.frame = _plate.bounds;
     _animatedScrim.layer.sublayers.firstObject.frame = _animatedScrim.bounds;
-    _visualizer.frame = _plate.bounds;
+    CGSize viewSize = self.view.bounds.size;
+    if (viewSize.width > 0 && viewSize.height > 0) {
+        CGRect plate = _plate.frame;
+        _visualizer.coverRect = CGRectMake(plate.origin.x / viewSize.width, plate.origin.y / viewSize.height,
+                                           plate.size.width / viewSize.width, plate.size.height / viewSize.height);
+    }
     CGFloat radius = (_lyricsOpen || _queueOpen) ? FZRRadiusThumb : FZRRadiusArtwork;
     _cover.layer.cornerRadius = radius;
     _animated.layer.cornerRadius = radius;
-    _visualizer.layer.cornerRadius = radius;
     _plate.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:_plate.bounds cornerRadius:radius].CGPath;
     _lyrics.frame = content;
     _queueList.frame = content;
@@ -1187,8 +1264,9 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
         _visualizer.alpha = visualizer ? 0 : 1;
         _visualizer.hidden = NO;
         [UIView animateWithDuration:0.35 animations:^{ self->_visualizer.alpha = visualizer ? 1 : 0; }
-                         completion:^(BOOL done) { if (!visualizer) self->_visualizer.hidden = YES; }];
+                         completion:^(BOOL done) { if (!visualizer) self->_visualizer.hidden = YES; [self applyBackdropLayout]; }];
     }
+    [self applyBackdropLayout];
     if (visualizer || mode == FZRArtworkCover || !FZRAnimatedCoversConfigured()) {
         _animatedAlbum = nil;
         [_animated stop];
@@ -1222,7 +1300,8 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
 
 - (void)applyBackdropLayout {
     BOOL compact = _lyricsOpen || _queueOpen;
-    CGFloat scrim = _backdropShowing ? 1 : 0, plate = _backdropShowing && !compact ? 0 : 1;
+    BOOL visualizer = !_visualizer.hidden && [self artworkMode] == FZRArtworkVisualizer;
+    CGFloat scrim = _backdropShowing || visualizer ? 1 : 0, plate = _backdropShowing && !compact ? 0 : 1;
     [UIView animateWithDuration:0.35 animations:^{
         self->_animatedScrim.alpha = scrim;
         self->_plate.alpha = plate;
@@ -1253,10 +1332,12 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
 }
 
 - (void)updateLyricsShader {
-    BOOL show = _lyricsOpen && FZHidden(kLyricsShadersKey) && _lyricsShader.available;
+    NSInteger background = FZRLyricsStyle.current.background;
+    if (background >= 0) _lyricsShader.style = (FZRVisualizerStyle)background;
+    BOOL show = _lyricsOpen && background >= 0 && _lyricsShader.available;
     if (show == !_lyricsShader.hidden && (show ? _lyricsShader.alpha > 0.5 : YES)) return;
-    if (show) { _lyricsShader.hidden = NO; [self.view insertSubview:_lyricsShader aboveSubview:_fluid]; }
-    [UIView animateWithDuration:0.4 animations:^{ self->_lyricsShader.alpha = show ? 0.75 : 0; }
+    if (show) { _lyricsShader.hidden = NO; [self.view insertSubview:_lyricsShader aboveSubview:_animatedScrim]; }
+    [UIView animateWithDuration:0.4 animations:^{ self->_lyricsShader.alpha = show ? 1 : 0; }
                      completion:^(BOOL done) { if (!show && !self->_lyricsOpen) self->_lyricsShader.hidden = YES; }];
 }
 
@@ -1282,7 +1363,19 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     UIAction *window = [UIAction actionWithTitle:@"In the cover window" image:[UIImage systemImageNamed:@"square"] identifier:nil
                                          handler:^(UIAction *a) { [weakSelf setAnimatedFullScreen:NO]; }];
     (fullScreen ? full : window).state = UIMenuElementStateOn;
-    [items addObject:[UIMenu menuWithTitle:@"Animated covers" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[full, window]]];
+    NSMutableArray *animatedItems = [NSMutableArray arrayWithObjects:full, window, nil];
+    NSString *album = string(FZNowPlayingInfo()[MPMediaItemPropertyAlbumTitle]);
+    if (album.length && FZRAnimatedCoversConfigured()) {
+        BOOL off = FZRAnimatedCoverOff(album);
+        if (off || _animated.file || _backdropShowing) {
+            UIAction *still = [UIAction actionWithTitle:off ? @"Animate this album again" : @"Still cover for this album"
+                                                  image:[UIImage systemImageNamed:off ? @"livephoto" : @"livephoto.slash"] identifier:nil
+                                                handler:^(UIAction *a) { FZRSetAnimatedCoverOff(album, !off); }];
+            still.subtitle = album;
+            [animatedItems addObject:still];
+        }
+    }
+    [items addObject:[UIMenu menuWithTitle:@"Animated covers" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:animatedItems]];
     FZRVisualizerStyle style = (FZRVisualizerStyle)FZInt(FZRKeyVisualizerStyle, FZRVisualizerShuffle);
     NSArray<NSString *> *styleNames = FZRVisualizerStyleNames();
     NSMutableArray *styles = [NSMutableArray array];
@@ -1303,21 +1396,25 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
 
 - (UIMenu *)lyricsLookMenu {
     __weak typeof(self) weakSelf = self;
-    BOOL shaders = FZHidden(kLyricsShadersKey);
-    UIAction *plain = [UIAction actionWithTitle:@"Default" image:nil identifier:nil handler:^(UIAction *a) {
-        FZSetEnabled(kLyricsShadersKey, NO);
-        [weakSelf updateLyricsShader];
-    }];
-    UIAction *shader = [UIAction actionWithTitle:@"Lyrics shaders" image:[UIImage systemImageNamed:@"sparkles"] identifier:nil handler:^(UIAction *a) {
-        FZSetEnabled(kLyricsShadersKey, YES);
-        typeof(self) player = weakSelf;
-        if (player && !player->_lyricsOpen) [player toggleLyrics]; else [player updateLyricsShader];
-    }];
-    shader.subtitle = @"Moves with the music behind the lines";
-    (shaders ? shader : plain).state = UIMenuElementStateOn;
-    UIMenu *menu = [UIMenu menuWithTitle:@"Lyrics" image:[UIImage systemImageNamed:@"quote.bubble"] identifier:nil options:0 children:@[plain, shader]];
-    menu.subtitle = shaders ? @"Lyrics shaders" : @"Default";
+    FZRLyricsStyle *current = FZRLyricsStyle.current;
+    NSMutableArray *items = [NSMutableArray array];
+    for (FZRLyricsStyle *style in FZRLyricsStyle.all) {
+        NSString *key = style.key;
+        UIAction *action = [UIAction actionWithTitle:style.name image:nil identifier:nil handler:^(UIAction *a) { [weakSelf chooseLyricsStyle:key]; }];
+        if (style.background >= 0) action.subtitle = @"With a shader behind the lines";
+        if (style == current) action.state = UIMenuElementStateOn;
+        [items addObject:action];
+    }
+    UIMenu *menu = [UIMenu menuWithTitle:@"Lyrics" image:[UIImage systemImageNamed:@"quote.bubble"] identifier:nil options:0 children:items];
+    menu.subtitle = current.name;
     return menu;
+}
+
+- (void)chooseLyricsStyle:(NSString *)key {
+    [[FZSettings defaults] setObject:key forKey:FZRKeyLyricsStyle];
+    [_lyrics restyle];
+    if (_lyricsOpen) { [_lyrics follow:FZNowPlayingElapsed()]; [self updateLyricsShader]; }
+    else [self toggleLyrics];
 }
 
 - (void)openNaviMusPlayer {

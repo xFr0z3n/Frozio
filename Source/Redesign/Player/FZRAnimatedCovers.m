@@ -11,6 +11,7 @@
 NSString *const FZRKeyAnimatedCoversURL = @"fz.animatedCovers.url";
 NSString *const FZRKeyAnimatedCoversUser = @"fz.animatedCovers.user";
 NSNotificationName const FZRAnimatedCoversDidChangeNotification = @"FZRAnimatedCoversDidChangeNotification";
+static NSString *const kOffKey = @"fz.animatedCovers.off";   // [album title, lowercased]
 static NSString *const kKeychainService = @"Frozio.AnimatedCovers";
 static const NSTimeInterval kListFresh = 15 * 60;
 
@@ -223,8 +224,26 @@ static NSURL *cachedFileFor(NSURL *remote) {
 static NSMutableDictionary<NSURL *, NSMutableArray *> *sDownloads;
 static NSMutableDictionary<NSString *, id> *sMatches;   // "artist|album" → file name or NSNull
 
+static NSString *offKey(NSString *album) {
+    return [album stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].lowercaseString;
+}
+
+BOOL FZRAnimatedCoverOff(NSString *album) {
+    return album.length && [[[FZSettings defaults] arrayForKey:kOffKey] containsObject:offKey(album)];
+}
+
+void FZRSetAnimatedCoverOff(NSString *album, BOOL off) {
+    if (!album.length) return;
+    NSMutableArray *list = [[[FZSettings defaults] arrayForKey:kOffKey] mutableCopy] ?: [NSMutableArray array];
+    [list removeObject:offKey(album)];
+    if (off) [list addObject:offKey(album)];
+    [[FZSettings defaults] setObject:list forKey:kOffKey];
+    FZLog("animated covers: %@ %@", album, off ? @"kept on its still cover" : @"animated again");
+    [NSNotificationCenter.defaultCenter postNotificationName:FZRAnimatedCoversDidChangeNotification object:nil];
+}
+
 void FZRAnimatedCoverFor(NSString *artist, NSString *album, void (^completion)(NSURL *file)) {
-    if (!FZRAnimatedCoversConfigured() || !album.length) { completion(nil); return; }
+    if (!FZRAnimatedCoversConfigured() || !album.length || FZRAnimatedCoverOff(album)) { completion(nil); return; }
     listFolder(NO, ^(NSDictionary<NSString *, NSURL *> *files) {
         NSString *key = [NSString stringWithFormat:@"%@|%@", artist ?: @"", album];
         if (!sMatches) sMatches = [NSMutableDictionary dictionary];
@@ -394,7 +413,19 @@ FZModSection *FZRAnimatedCoversSection(void) {
         if (!FZRAnimatedCoversConfigured()) return @"–";
         return sList ? [NSString stringWithFormat:@"%lu", (unsigned long)sList.count] : @"…";
     }, ^{ forgetList(); listFolder(YES, ^(NSDictionary *files) {}); }), @"arrow.clockwise");
+    FZModRow *kept = FZWithSymbol(FZStatActionRow(@"Albums on their still cover", @"Tap to animate them all again", ^NSString *{
+        return [NSString stringWithFormat:@"%lu", (unsigned long)[[FZSettings defaults] arrayForKey:kOffKey].count];
+    }, ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Animate every album again?"
+            message:@"Albums you set to their still cover in the player go back to their animated cover." preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Animate Again" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
+            [[FZSettings defaults] removeObjectForKey:kOffKey];
+            [NSNotificationCenter.defaultCenter postNotificationName:FZRAnimatedCoversDidChangeNotification object:nil];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        [FZTopController() presentViewController:alert animated:YES completion:nil];
+    }), @"photo");
     if (FZRAnimatedCoversConfigured() && !sList) listFolder(NO, ^(NSDictionary *files) {});
-    return FZNotedSection(@"Animated covers", @[folder, found],
+    return FZNotedSection(@"Animated covers", @[folder, found, kept],
                           @"An album's video is shown in place of its cover wherever one matches, in the player and on the album page. Videos are downloaded once and kept in the caches.");
 }
