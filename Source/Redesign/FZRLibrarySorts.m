@@ -72,6 +72,16 @@ static BOOL storeType(NSString *type) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     id current = [defaults objectForKey:key];
     id value = [current isKindOfClass:NSNumber.class] ? @([listTypes() indexOfObject:type]) : type;
+    if ([current isEqual:value]) {
+        // Already byYear (newest ↔ oldest first): the same value is no change to NaviMus, which then never reloads
+        // (device log, build 42). Cleared first, then set again, it reloads with the new year range.
+        [defaults removeObjectForKey:key];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [NSUserDefaults.standardUserDefaults setObject:value forKey:key];
+        });
+        FZLog("library: albums sorted by %@ again (%@, the other direction)", type, key);
+        return YES;
+    }
     [defaults setObject:value forKey:key];
     FZLog("library: albums sorted by %@ (%@ = %@, was %@)", type, key, value, current);
     return YES;

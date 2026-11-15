@@ -369,7 +369,12 @@ private struct LegacyBand: View {
                             Menu {
                                 Button("Download") { NSLog("[harness] NaviMus player menu: Download song") }
                                 Button("Add to Playlist") { NSLog("[harness] NaviMus player menu: Add to Playlist") }
-                                Button("Add to Queue") { NSLog("[harness] NaviMus player menu: Add to Queue") }
+                                Button("Add to Queue") {
+                                    NSLog("[harness] NaviMus player menu: Add to Queue")
+                                    let manager = StandInAudioManager.shared
+                                    if let current = manager._currentQueueItem { manager._primaryQueue.append(current) }
+                                    manager.handleItemChanged()
+                                }
                                 Button("Go to Album") {}
                             } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
                                 .accessibilityLabel("More")
@@ -432,6 +437,36 @@ private struct MiniPlayer: View {
 final class StandInModel: ObservableObject {
     @Published var song: String?
     @Published var expanded = false   // NaviMus's player open (it grows out of the band)
+}
+
+// NaviMus's AudioManager as Frozio reads it: an NSObject of that name with its queue fields (1.6.1 names).
+struct StandInSong { let id: String; let title: String; let artist: String?; let album: String?; let coverArt: String?; let duration: Int? }
+struct StandInQueueItem { let id = UUID(); var song: StandInSong }
+
+@objc(_TtC7Arpeggi12AudioManager)
+final class StandInAudioManager: NSObject {
+    static let shared = StandInAudioManager()
+    var _currentQueueItem: StandInQueueItem?
+    var _primaryQueue: [StandInQueueItem] = []
+    var _secondaryQueue: [StandInQueueItem] = []
+    var _continuousQueue: [StandInQueueItem] = []
+    var _queueHistory: [StandInQueueItem] = []
+    @objc dynamic func handleItemChanged() {}
+    @objc dynamic func updateCurrentRoute() {}
+    @objc dynamic func playerDidFinishPlaying(_ note: Any?) {}
+
+    func load(current index: Int) {
+        func item(_ i: Int) -> StandInQueueItem {
+            StandInQueueItem(song: StandInSong(id: "so-\(i + 1)", title: standInSongs[i], artist: "Harness Artist", album: "Harness Album 1",
+                                               coverArt: "al-1", duration: 200))
+        }
+        _currentQueueItem = item(index)
+        _queueHistory = (0..<index).map(item)
+        _secondaryQueue = ((index + 1)..<standInSongs.count).map(item)
+        _continuousQueue = [StandInQueueItem(song: StandInSong(id: "so-ap", title: "Autoplay Song", artist: "Guest Singer", album: "Harness Album 2",
+                                                               coverArt: "al-2", duration: 180))]
+        handleItemChanged()
+    }
 }
 
 @MainActor
@@ -511,6 +546,7 @@ final class StandInPlayer {
     func play(_ id: String) {
         song = id
         model.song = id
+        StandInAudioManager.shared.load(current: max(0, min(standInSongs.count - 1, (Int(id.dropFirst(3)) ?? 1) - 1)))
         elapsed = 0
         started = Date()
         playing = true

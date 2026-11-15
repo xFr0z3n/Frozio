@@ -59,20 +59,29 @@ static void collectItems(UIView *view, NSUInteger depth, NSMutableArray<UIView *
     for (UIView *sub in view.subviews) collectItems(sub, depth + 1, items);
 }
 
-// Where the button's glyph is: the centre of its image views (the back chevron), else of the button.
+// Where the button's glyph is: its image views (the back chevron), else the small views SwiftUI draws the glyph in
+// (⋯ and NaviMus's other items: their glyph isn't always at the middle of the item, build 42), else the middle.
 static CGPoint glyphCentre(UIView *item) {
-    CGRect box = CGRectNull;
+    CGRect images = CGRectNull, leaves = CGRectNull;
+    CGSize limit = item.bounds.size;
     NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithArray:item.subviews];
     while (queue.count) {
         UIView *view = queue.firstObject;
         [queue removeObjectAtIndex:0];
-        if (view.hidden || view.alpha < 0.01) continue;
+        if (view.hidden || view.alpha < 0.01 || [view isKindOfClass:UIVisualEffectView.class]) continue;   // Frozio's glass
+        if ([NSStringFromClass(view.class) rangeOfString:@"MaskView"].location != NSNotFound) continue;
+        CGRect frame = [view convertRect:view.bounds toView:item];
         if ([view isKindOfClass:UIImageView.class] && ((UIImageView *)view).image && view.bounds.size.width >= 6) {
-            box = CGRectUnion(box, [view convertRect:view.bounds toView:item]);
+            images = CGRectUnion(images, frame);
+        } else if (!view.subviews.count && frame.size.width >= 4 && frame.size.height >= 4
+                   && frame.size.width < limit.width - 1 && frame.size.height < limit.height - 1) {
+            leaves = CGRectUnion(leaves, frame);
         }
         [queue addObjectsFromArray:view.subviews];
     }
-    return CGRectIsNull(box) ? CGPointMake(CGRectGetMidX(item.bounds), CGRectGetMidY(item.bounds)) : CGPointMake(CGRectGetMidX(box), CGRectGetMidY(box));
+    CGRect box = !CGRectIsNull(images) ? images : leaves;
+    if (CGRectIsNull(box)) return CGPointMake(CGRectGetMidX(item.bounds), CGRectGetMidY(item.bounds));
+    return CGPointMake(round(CGRectGetMidX(box) * 2) / 2, round(CGRectGetMidY(box) * 2) / 2);
 }
 
 static BOOL isFrozioBar(UINavigationBar *bar) {
@@ -93,7 +102,14 @@ static NSString *labelOf(UIView *item) {
     return nil;
 }
 
+static BOOL holdsFrozioEntry(UIView *view) {
+    if ([view.accessibilityIdentifier isEqualToString:@"fz.settings.entry"]) return YES;
+    for (UIView *sub in view.subviews) if (holdsFrozioEntry(sub)) return YES;
+    return NO;
+}
+
 static FZRBarRole roleOf(UIView *item, BOOL firstLeading, UINavigationBar *bar) {
+    if (holdsFrozioEntry(item)) return FZRBarRoleFrozio;
     NSString *label = labelOf(item);
     if ([label isEqualToString:@"Frozio settings"]) return FZRBarRoleFrozio;
     if ([label isEqualToString:@"More"] || [label isEqualToString:@"More Options"] || [label isEqualToString:@"ellipsis"]) return FZRBarRoleMore;

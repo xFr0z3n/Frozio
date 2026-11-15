@@ -11,10 +11,13 @@
 // Every button can be hidden (Frozio settings → Appearance → Redesigned pages).
 #import <AVKit/AVKit.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/Kit/FZRTokens.h"
 #import "Redesign/Kit/FZRField.h"
 #import "Redesign/Kit/FZRKawarp.h"
+#import "Redesign/Player/FZRQueue.h"
+#import "Redesign/Data/FZServer.h"
 #import "Redesign/FZRNaviMusControls.h"
 #import "Redesign/Kit/FZRRoundButton.h"
 #import "Redesign/Album/FZRAlbumPage.h"
@@ -190,9 +193,19 @@ static UIMenu *sleepMenu(void) {
 
 #pragma mark - lyrics
 
-// NaviMus's own synced lyrics (FZNaviMusLyrics), the sung line bright and the rest dimmed, following the song;
-// a line tapped seeks there. PlayerLyrics.x's values: lines fade in over 0.30 s after 0.12 s.
-@interface FZRLyricsView : UIScrollView
+// NaviMus's own synced lyrics (FZNaviMusLyrics) as chroma.pw shows them (the user's screenshot): big bold lines on
+// the left, the sung one white, the rest dimmed and blurred the further they are from it, the lines fading out at the
+// top and bottom; a line tapped seeks there. Values from taurus/tweak/Sources/Redesigned/Lyrics/SGRKaraokeView.m and
+// LyricsLook.m @ fe3211c (GPL-3.0): 30 pt bold lines 24 pt apart (its "Apple Music" look), dim 0.3, 1.4 pt of blur
+// a line away up to 6, the sung line resting 28 % down, a 10 % fade at each edge, 3 s before following again after
+// a scroll by hand.
+static const CGFloat kLyricsSize = 30, kLyricsGap = 24, kLyricsDim = 0.3, kBlurPerLine = 1.4, kMaxBlur = 6;
+static const CGFloat kLyricsAnchor = 0.28, kLyricsEdgeFade = 0.1;
+static const NSTimeInterval kBrowseHold = 3;
+// The lyrics' and the queue's layout (taurus PlayerLyrics.x @ fe3211c, GPL-3.0).
+static const CGFloat kThumbSide = 72, kThumbGap = 16, kTitleGap = 12, kLyricsTop = 20, kLyricsBottom = 8;
+
+@interface FZRLyricsView : UIScrollView <UIScrollViewDelegate>
 @property (nonatomic, copy) void (^seek)(NSTimeInterval seconds);
 - (BOOL)showSong:(NSString *)songID;
 - (void)follow:(NSTimeInterval)seconds;
@@ -203,14 +216,20 @@ static UIMenu *sleepMenu(void) {
     NSString *_song;
     NSMutableArray<UILabel *> *_labels;
     NSInteger _current;
-    NSTimeInterval _userScrolled;
+    CFTimeInterval _browsed;
+    CAGradientLayer *_fade;
 }
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
     self.showsVerticalScrollIndicator = NO;
     self.alwaysBounceVertical = YES;
+    self.delegate = self;
     _labels = [NSMutableArray array];
     _current = -1;
+    _fade = [CAGradientLayer layer];
+    _fade.colors = @[(id)UIColor.clearColor.CGColor, (id)UIColor.blackColor.CGColor, (id)UIColor.blackColor.CGColor, (id)UIColor.clearColor.CGColor];
+    _fade.locations = @[@0, @(kLyricsEdgeFade), @(1 - kLyricsEdgeFade), @1];
+    self.layer.mask = _fade;
     return self;
 }
 - (BOOL)showSong:(NSString *)songID {
@@ -220,13 +239,13 @@ static UIMenu *sleepMenu(void) {
     for (UILabel *label in _labels) [label removeFromSuperview];
     [_labels removeAllObjects];
     _current = -1;
+    UIFont *font = [UIFont systemFontOfSize:kLyricsSize weight:UIFontWeightBold];
     for (FZLyricLine *line in _lyrics.lines) {
         UILabel *label = [UILabel new];
         label.numberOfLines = 0;
         label.text = line.text.length ? line.text : @"♪";
-        label.font = FZRFont(UIFontTextStyleTitle2, UIFontWeightBold, UIContentSizeCategoryExtraExtraLarge);
+        label.font = font;
         label.textColor = FZRPrimary();
-        label.alpha = 0.35;
         label.userInteractionEnabled = YES;
         [label addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
         [self addSubview:label];
@@ -234,23 +253,59 @@ static UIMenu *sleepMenu(void) {
     }
     self.contentOffset = CGPointZero;
     [self setNeedsLayout];
+    [self restyleAnimated:NO];
     return _lyrics != nil;
 }
 - (void)layoutSubviews {
     [super layoutSubviews];
-    CGFloat width = self.bounds.size.width, y = self.bounds.size.height * 0.25;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _fade.frame = CGRectMake(0, self.contentOffset.y, self.bounds.size.width, self.bounds.size.height);
+    [CATransaction commit];
+    CGFloat width = self.bounds.size.width, y = self.bounds.size.height * kLyricsAnchor;
     for (UILabel *label in _labels) {
         CGFloat height = ceil([label sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].height);
-        label.frame = CGRectMake(0, y, width, height);
-        y += height + 18;
+        CGRect frame = CGRectMake(0, y, width, height);
+        if (!CGRectEqualToRect(label.frame, frame)) label.frame = frame;
+        y += height + kLyricsGap;
     }
-    self.contentSize = CGSizeMake(width, y + self.bounds.size.height * 0.5);
+    CGSize size = CGSizeMake(width, y + self.bounds.size.height * (1 - kLyricsAnchor));
+    if (!CGSizeEqualToSize(self.contentSize, size)) self.contentSize = size;
+}
+// The blur of a line `distance` lines from the sung one (CAFilter's gaussian blur, as SGRKaraokeView sets it).
+static void blurLabel(UILabel *label, CGFloat radius) {
+    if (radius <= 0.01) { label.layer.filters = nil; return; }
+    id filter = label.layer.filters.firstObject;
+    if (!filter) {
+        Class cls = NSClassFromString(@"CAFilter");
+        SEL make = NSSelectorFromString(@"filterWithType:");
+        if (![cls respondsToSelector:make]) return;
+        filter = ((id (*)(id, SEL, NSString *))objc_msgSend)(cls, make, @"gaussianBlur");
+        [filter setValue:@YES forKey:@"inputNormalizeEdges"];
+        label.layer.filters = @[filter];
+    }
+    [label.layer setValue:@(radius) forKeyPath:@"filters.gaussianBlur.inputRadius"];
+}
+- (void)restyleAnimated:(BOOL)animated {
+    void (^apply)(void) = ^{
+        for (NSUInteger i = 0; i < self->_labels.count; i++) {
+            NSInteger distance = self->_current < 0 ? 1 : labs((NSInteger)i - self->_current);
+            UILabel *label = self->_labels[i];
+            label.alpha = distance == 0 ? 1 : kLyricsDim;
+            blurLabel(label, MIN(kMaxBlur, kBlurPerLine * distance));
+        }
+    };
+    if (animated) [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                                   animations:apply completion:nil];
+    else apply();
 }
 - (void)tapped:(UITapGestureRecognizer *)tap {
     NSUInteger index = [_labels indexOfObject:(UILabel *)tap.view];
     if (index == NSNotFound || index >= _lyrics.lines.count || !self.seek) return;
     self.seek(MAX(0, (_lyrics.lines[index].start + _lyrics.offset) / 1000.0));
 }
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scroll { _browsed = CACurrentMediaTime(); }
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scroll { _browsed = CACurrentMediaTime(); }
 - (void)follow:(NSTimeInterval)seconds {
     if (!_lyrics) return;
     NSInteger ms = (NSInteger)(seconds * 1000) - _lyrics.offset, current = -1;
@@ -259,16 +314,131 @@ static UIMenu *sleepMenu(void) {
     }
     if (current == _current) return;
     _current = current;
-    [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
-        for (NSUInteger i = 0; i < self->_labels.count; i++) self->_labels[i].alpha = (NSInteger)i == current ? 1 : 0.35;
-    } completion:nil];
-    // Follows the song unless the user is reading elsewhere (for 3 s after a drag).
-    if (self.isDragging || self.isDecelerating) _userScrolled = CACurrentMediaTime();
-    if (current < 0 || CACurrentMediaTime() - _userScrolled < 3) return;
+    [self restyleAnimated:YES];
+    if (current < 0 || self.isDragging || self.isDecelerating || CACurrentMediaTime() - _browsed < kBrowseHold) return;
     [self layoutIfNeeded];
     UILabel *label = _labels[(NSUInteger)current];
-    CGFloat target = MAX(0, MIN(CGRectGetMinY(label.frame) - self.bounds.size.height * 0.28, self.contentSize.height - self.bounds.size.height));
-    FZRAnimate(FZRMotionLayout, ^{ self.contentOffset = CGPointMake(0, target); }, nil);
+    CGFloat target = MAX(0, MIN(CGRectGetMinY(label.frame) - self.bounds.size.height * kLyricsAnchor, self.contentSize.height - self.bounds.size.height));
+    FZRAnimate(FZRMotionLayout, ^{ self.contentOffset = CGPointMake(0, target); [self layoutIfNeeded]; }, nil);
+}
+@end
+
+#pragma mark - queue
+
+// NaviMus's queue (FZRQueue) in its own sections, as NaviMus's player lists it: what was added to play next, the rest
+// of what's playing, then autoplay. A song tapped is reached with NaviMus's own next-track handler, once per song
+// before it, so NaviMus's queue stays its own.
+@interface FZRQueueView : UITableView <UITableViewDataSource, UITableViewDelegate>
+@property (nonatomic, readonly) NSCache<NSString *, UIImage *> *coverCache;
+- (void)reload;
+@end
+
+@implementation FZRQueueView {
+    NSArray<NSDictionary *> *_sections;   // {title, songs}
+    NSCache<NSString *, UIImage *> *_covers;
+}
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (!(self = [super initWithFrame:frame style:UITableViewStylePlain])) return nil;
+    self.backgroundColor = UIColor.clearColor;
+    self.separatorStyle = UITableViewCellSeparatorStyleNone;
+    self.dataSource = self;
+    self.delegate = self;
+    self.rowHeight = 60;
+    self.showsVerticalScrollIndicator = NO;
+    // Rows flush with the section titles and the player's 24 pt margin.
+    self.layoutMargins = UIEdgeInsetsZero;
+    self.cellLayoutMarginsFollowReadableWidth = NO;
+    self.preservesSuperviewLayoutMargins = NO;
+    if (@available(iOS 15.0, *)) self.sectionHeaderTopPadding = 0;
+    _covers = [NSCache new];
+    [self registerClass:UITableViewCell.class forCellReuseIdentifier:@"song"];
+    return self;
+}
+- (void)reload {
+    NSDictionary *queue = FZRNaviMusQueue();
+    NSMutableArray *sections = [NSMutableArray array];
+    NSString *album = string(queue[@"current"][@"album"]);
+    NSArray *parts = @[@[@"next", @"Playing Next"], @[@"context", album ? [@"Next from: " stringByAppendingString:album] : @"Up Next"], @[@"autoplay", @"Autoplay"]];
+    for (NSArray *part in parts) {
+        NSArray *songs = queue[part[0]];
+        if ([songs isKindOfClass:NSArray.class] && songs.count) [sections addObject:@{@"title": part[1], @"songs": songs}];
+    }
+    _sections = sections;
+    [self reloadData];
+    self.backgroundView = sections.count ? nil : ({
+        UILabel *empty = [UILabel new];
+        empty.text = queue ? @"Nothing up next" : @"NaviMus's queue shows once a song has started";
+        empty.textColor = FZRSecondary();
+        empty.textAlignment = NSTextAlignmentCenter;
+        empty.numberOfLines = 0;
+        empty.font = FZRFont(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
+        empty;
+    });
+}
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)table { return (NSInteger)_sections.count; }
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section { return (NSInteger)[_sections[(NSUInteger)section][@"songs"] count]; }
+- (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section { return 36; }
+- (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
+    UILabel *title = [UILabel new];
+    title.text = _sections[(NSUInteger)section][@"title"];
+    title.font = FZRFont(UIFontTextStyleHeadline, UIFontWeightBold, UIContentSizeCategoryExtraLarge);
+    title.textColor = FZRPrimary();
+    UIView *header = [UIView new];
+    [header addSubview:title];
+    title.frame = CGRectMake(0, 8, table.bounds.size.width, 22);
+    return header;
+}
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell = [table dequeueReusableCellWithIdentifier:@"song" forIndexPath:path];
+    NSDictionary *song = _sections[(NSUInteger)path.section][@"songs"][(NSUInteger)path.row];
+    UIListContentConfiguration *content = UIListContentConfiguration.subtitleCellConfiguration;
+    content.text = string(song[@"title"]) ?: @"";
+    content.secondaryText = string(song[@"artist"]);
+    content.textProperties.font = FZRFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
+    content.textProperties.color = FZRPrimary();
+    content.textProperties.numberOfLines = 1;
+    content.secondaryTextProperties.font = FZRFont(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
+    content.secondaryTextProperties.color = FZRSecondary();
+    content.secondaryTextProperties.numberOfLines = 1;
+    content.imageProperties.maximumSize = CGSizeMake(44, 44);
+    content.imageProperties.reservedLayoutSize = CGSizeMake(44, 44);
+    content.imageProperties.cornerRadius = 6;
+    content.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(8, 0, 8, 0);
+    content.imageToTextPadding = 12;
+    NSString *cover = string(song[@"coverArt"]);
+    UIImage *image = cover ? [_covers objectForKey:cover] : nil;
+    content.image = image ?: [UIImage systemImageNamed:@"music.note"];
+    content.imageProperties.tintColor = FZRTertiary();
+    cell.contentConfiguration = content;
+    cell.backgroundColor = UIColor.clearColor;
+    cell.preservesSuperviewLayoutMargins = NO;
+    cell.layoutMargins = UIEdgeInsetsZero;
+    cell.contentView.preservesSuperviewLayoutMargins = NO;
+    cell.contentView.layoutMargins = UIEdgeInsetsZero;
+    UIView *pressed = [UIView new];
+    pressed.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
+    cell.selectedBackgroundView = pressed;
+    if (cover && !image && FZServerReady()) {
+        __weak typeof(self) weakSelf = self;
+        FZServerImage(FZServerCoverURL(cover, 132), ^(UIImage *loaded) {
+            if (!loaded || !weakSelf) return;
+            [weakSelf.coverCache setObject:loaded forKey:cover];
+            [weakSelf reloadRowsAtIndexPaths:@[path] withRowAnimation:UITableViewRowAnimationNone];
+        });
+    }
+    return cell;
+}
+- (NSCache<NSString *, UIImage *> *)coverCache { return _covers; }
+- (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
+    [table deselectRowAtIndexPath:path animated:YES];
+    NSUInteger steps = 1;
+    for (NSInteger section = 0; section < path.section; section++) steps += [_sections[(NSUInteger)section][@"songs"] count];
+    steps += (NSUInteger)path.row;
+    FZLog("player: queue song %lu ahead", (unsigned long)steps);
+    MPRemoteCommand *next = MPRemoteCommandCenter.sharedCommandCenter.nextTrackCommand;
+    for (NSUInteger i = 0; i < steps; i++) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.12 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ FZRemoteSend(next); });
+    }
 }
 @end
 
@@ -296,6 +466,7 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     UIView *_plate;
     UIImageView *_cover;
     FZRLyricsView *_lyrics;
+    FZRQueueView *_queueList;
     UILabel *_title, *_artist, *_explicitBadge;
     FZRRoundButton *_download;
     FZRScrubber *_scrubber;
@@ -306,7 +477,7 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     FZRRoundButton *_lyricsButton, *_queue;
     NSTimer *_timer;
     NSString *_coverSong, *_downloadedSong;
-    BOOL _lyricsOpen, _shuffleOn;
+    BOOL _lyricsOpen, _queueOpen, _shuffleOn;
     NSInteger _repeatMode;   // 0 off, 1 all, 2 one
 }
 
@@ -395,6 +566,11 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     __weak typeof(self) weakSelf = self;
     _lyrics.seek = ^(NSTimeInterval seconds) { [weakSelf seekTo:seconds]; };
     [view addSubview:_lyrics];
+    _queueList = [FZRQueueView new];
+    _queueList.alpha = 0;
+    _queueList.hidden = YES;
+    [view addSubview:_queueList];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(queueChanged) name:FZRQueueDidChangeNotification object:nil];
 
     _title = [self label:UIFontTextStyleTitle1 weight:UIFontWeightBold color:FZRPrimary()];
     _artist = [self label:UIFontTextStyleBody weight:UIFontWeightRegular color:FZRSecondary()];
@@ -440,6 +616,10 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     UITapGestureRecognizer *coverTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(playPause)];
     coverTap.numberOfTapsRequired = 2;
     [_plate addGestureRecognizer:coverTap];
+    // The thumbnail brings the cover back from the lyrics or the queue.
+    UITapGestureRecognizer *thumbTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(thumbTapped)];
+    [thumbTap requireGestureRecognizerToFail:coverTap];
+    [_plate addGestureRecognizer:thumbTap];
 
     for (NSNotificationName name in @[FZNowPlayingDidChangeNotification, FZRSleepTimerDidChangeNotification, NSUserDefaultsDidChangeNotification, FZRFluidLookDidChangeNotification]) {
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:name object:nil];
@@ -528,6 +708,7 @@ static BOOL externalRoute(void) {
         _slot.hidden = !FZEnabled(FZRKeyPlayerSleep);
     }
     _lyricsButton.glyph.tintColor = _lyricsOpen ? FZRAccent() : FZRPrimary();
+    _queue.glyph.tintColor = _queueOpen ? FZRAccent() : FZRPrimary();
     [_lyricsButton setSymbol:_lyricsOpen ? @"quote.bubble.fill" : @"quote.bubble"];
     _route.tintColor = externalRoute() ? FZRAccent() : FZRPrimary();
     _route.activeTintColor = FZRAccent();
@@ -559,7 +740,7 @@ static BOOL externalRoute(void) {
 }
 
 - (void)showPaused:(BOOL)paused animated:(BOOL)animated {
-    CGFloat scale = paused && FZEnabled(FZRKeyPlayerShrink) && !_lyricsOpen ? (FZRReduceMotion() ? kPausedScaleReduced : kPausedScale) : 1;
+    CGFloat scale = paused && FZEnabled(FZRKeyPlayerShrink) && !_lyricsOpen && !_queueOpen ? (FZRReduceMotion() ? kPausedScaleReduced : kPausedScale) : 1;
     if (CGAffineTransformEqualToTransform(_plate.transform, CGAffineTransformMakeScale(scale, scale))) return;
     void (^change)(void) = ^{ self->_plate.transform = CGAffineTransformMakeScale(scale, scale); };
     if (animated) FZRAnimate(FZRMotionLayout, change, nil); else change();
@@ -624,13 +805,34 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     CGFloat top = headerMid + kCoverBelowHeader, bottom = titleY - 24;
     CGFloat coverSide = MAX(0, MIN(inner, bottom - top));
     CGRect cover = CGRectMake(round((width - coverSide) / 2), top, coverSide, coverSide);
+    CGRect content = CGRectMake(side, headerMid + kCircle / 2 + 12, inner, bottom - (headerMid + kCircle / 2 + 12));
+    if (_lyricsOpen || _queueOpen) {
+        // Lyrics or the queue (taurus PlayerLyrics.x: a 72 pt thumbnail 8 pt under the band's top, the title 16 pt
+        // beside it, 12 pt clear of the trailing controls, the lines 20 pt under the row and 8 pt above the bar).
+        CGRect thumb = CGRectMake(side, headerMid + kCircle / 2 + 8, kThumbSide, kThumbSide);
+        cover = thumb;
+        CGFloat textX = CGRectGetMaxX(thumb) + kThumbGap;
+        CGFloat trailing = _download.hidden ? 0 : kCircle + kTitleGap;
+        CGFloat rowTextW = width - side - trailing - textX;
+        CGFloat rowY = round(CGRectGetMidY(thumb) - (titleH + artistH) / 2);
+        _title.frame = CGRectMake(textX, rowY, rowTextW, titleH);
+        _explicitBadge.frame = CGRectMake(textX, round(rowY + titleH + (artistH - badge) / 2), badge, badge);
+        CGFloat rowArtistX = textX + (badge ? badge + 8 : 0);
+        _artist.frame = CGRectMake(rowArtistX, rowY + titleH, rowTextW - (rowArtistX - textX), artistH);
+        centre(_download, width - side - kCircle / 2 + 6, CGRectGetMidY(thumb), kCircle);
+        CGFloat contentTop = CGRectGetMaxY(thumb) + kLyricsTop;
+        content = CGRectMake(side, contentTop, inner, CGRectGetMinY(_scrubber.frame) - kLyricsBottom - contentTop);
+    }
     CGAffineTransform transform = _plate.transform;
     _plate.transform = CGAffineTransformIdentity;
     _plate.frame = cover;
     _plate.transform = transform;
     _cover.frame = _plate.bounds;
-    _plate.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:_plate.bounds cornerRadius:FZRRadiusArtwork].CGPath;
-    _lyrics.frame = CGRectMake(side, headerMid + kCircle / 2 + 12, inner, bottom - (headerMid + kCircle / 2 + 12));
+    CGFloat radius = (_lyricsOpen || _queueOpen) ? FZRRadiusThumb : FZRRadiusArtwork;
+    _cover.layer.cornerRadius = radius;
+    _plate.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:_plate.bounds cornerRadius:radius].CGPath;
+    _lyrics.frame = content;
+    _queueList.frame = content;
 }
 
 #pragma mark actions
@@ -687,18 +889,45 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     if (duration > 0) [self seekTo:_scrubber.value * duration];
 }
 
-- (void)setLyricsOpen:(BOOL)open {
-    _lyricsOpen = open;
-    if (open) _lyrics.hidden = NO;
-    FZRAnimate(FZRMotionLayout, ^{
-        self->_lyrics.alpha = open ? 1 : 0;
-        self->_plate.alpha = open ? 0 : 1;
-        self->_lyrics.transform = open ? CGAffineTransformIdentity : CGAffineTransformMakeScale(0.96, 0.96);
-    }, ^(BOOL finished) {
-        if (!self->_lyricsOpen) self->_lyrics.hidden = YES;
-    });
+// Cover, lyrics or queue: the cover moves into the thumbnail and back on the layout spring, the title with it, and
+// the lines or the list come up from just under full size (taurus PlayerLyrics.x: in 0.30 s after 0.12 s, out 0.16 s).
+- (void)setLyricsOpen:(BOOL)lyrics queueOpen:(BOOL)queue {
+    BOOL wasCompact = _lyricsOpen || _queueOpen;
+    _lyricsOpen = lyrics;
+    _queueOpen = queue;
+    BOOL compact = lyrics || queue;
+    if (queue) [_queueList reload];
+    UIFont *titleFont = FZRFont(compact ? UIFontTextStyleTitle3 : UIFontTextStyleTitle1, UIFontWeightBold, UIContentSizeCategoryExtraExtraLarge);
+    if (compact != wasCompact) {
+        [UIView transitionWithView:_title duration:0.2 options:UIViewAnimationOptionTransitionCrossDissolve animations:^{ self->_title.font = titleFont; } completion:nil];
+    }
+    [self showPaused:NO animated:YES];
+    FZRAnimateLayout(self.view, ^{ [self.view setNeedsLayout]; }, nil);
+    for (UIView *panel in @[_lyrics, _queueList]) {
+        BOOL shown = (panel == _lyrics && lyrics) || (panel == _queueList && queue);
+        if (shown) {
+            panel.hidden = NO;
+            panel.transform = CGAffineTransformMakeScale(0.96, 0.96);
+            [UIView animateWithDuration:0.3 delay:0.12 options:UIViewAnimationOptionCurveEaseInOut animations:^{
+                panel.alpha = 1;
+                panel.transform = CGAffineTransformIdentity;
+            } completion:nil];
+        } else if (!panel.hidden) {
+            [UIView animateWithDuration:0.16 animations:^{ panel.alpha = 0; } completion:^(BOOL finished) {
+                if (panel.alpha < 0.01) panel.hidden = YES;
+            }];
+        }
+    }
     [self refresh];
 }
+
+- (void)setLyricsOpen:(BOOL)open { [self setLyricsOpen:open queueOpen:NO]; }
+
+- (void)thumbTapped {
+    if (_lyricsOpen || _queueOpen) [self setLyricsOpen:NO queueOpen:NO];
+}
+
+- (void)queueChanged { if (_queueOpen) [_queueList reload]; }
 
 - (void)toggleLyrics {
     if (_lyricsOpen) { [self setLyricsOpen:NO]; return; }
@@ -724,8 +953,8 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     }];
 }
 
-// NaviMus's queue: in its own player, for now.
-- (void)openQueue { [self openNaviMusPlayer]; }
+// NaviMus's queue, in Frozio's player (as NaviMus's player shows it: the cover up top, the list above the bar).
+- (void)openQueue { [self setLyricsOpen:NO queueOpen:!_queueOpen]; }
 
 - (void)download {
     UITabBarController *tabs = FZRPlayerTabs();
@@ -878,6 +1107,7 @@ static UIAction *comingAction(NSString *title, NSString *symbol, NSString *subti
     // Down and not on the scrubber or in scrolled lyrics.
     if (CGRectContainsPoint(CGRectInset(_scrubber.frame, 0, -10), start)) return NO;
     if (_lyricsOpen && CGRectContainsPoint(_lyrics.frame, start) && _lyrics.contentOffset.y > 1) return NO;
+    if (_queueOpen && CGRectContainsPoint(_queueList.frame, start) && _queueList.contentOffset.y > 1) return NO;
     return velocity.y > fabs(velocity.x);
 }
 
@@ -942,7 +1172,7 @@ NSArray *FZRPlayerOptionSections(void) {
     FZModRow *airPlay = FZWithSymbol(FZSwitchRow(@"AirPlay", nil, FZRKeyPlayerAirPlay), @"airplayaudio");
     FZModRow *sleep = FZWithSymbol(FZSwitchRow(@"Sleep timer", nil, FZRKeyPlayerSleep), @"moon.zzz");
     FZModRow *lyrics = FZWithSymbol(FZSwitchRow(@"Lyrics", nil, FZRKeyPlayerLyrics), @"quote.bubble");
-    FZModRow *queue = FZWithSymbol(FZSwitchRow(@"Queue", @"Opens NaviMus's own player for now.", FZRKeyPlayerQueue), @"list.bullet");
+    FZModRow *queue = FZWithSymbol(FZSwitchRow(@"Queue", @"NaviMus's queue, in this player.", FZRKeyPlayerQueue), @"list.bullet");
     FZModRow *more = FZWithSymbol(FZSwitchRow(@"⋯ menu", nil, FZRKeyPlayerMore), @"ellipsis.circle");
     FZModRow *shrink = FZWithSymbol(FZSwitchRow(@"Smaller cover while paused", nil, FZRKeyPlayerShrink), @"arrow.down.right.and.arrow.up.left");
     return @[
