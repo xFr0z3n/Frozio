@@ -1,8 +1,5 @@
-// How the player's lyrics look: chroma.pw's Lyrics → styles. Default is Frozio's (taurus's) look. Poster, Neon,
-// Highlighter, Subtitles and Novel take the values chroma.pw ships for its built-in styles (font, weight, case, colours,
-// alignment, anchor, glow, dim, blur); its own code isn't used. Inferno, Hologram, Chrome and Blueprint are Frozio's,
-// after the looks of chroma.pw's Workshop styles (those are downloaded from chroma.pw with its Plus and aren't
-// included), each with a shader behind the lines (FZRVisualizer's backgrounds) moving with the music.
+// How the player's lyrics look (⋯ → Lyrics): Default, every line white as before, or Accent, the sung line in the
+// accent colour. (The user asked for the other styles to go, build 51.)
 #pragma once
 #import <UIKit/UIKit.h>
 

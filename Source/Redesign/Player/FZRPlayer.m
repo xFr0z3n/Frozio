@@ -1401,7 +1401,6 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     for (FZRLyricsStyle *style in FZRLyricsStyle.all) {
         NSString *key = style.key;
         UIAction *action = [UIAction actionWithTitle:style.name image:nil identifier:nil handler:^(UIAction *a) { [weakSelf chooseLyricsStyle:key]; }];
-        if (style.background >= 0) action.subtitle = @"With a shader behind the lines";
         if (style == current) action.state = UIMenuElementStateOn;
         [items addObject:action];
     }
