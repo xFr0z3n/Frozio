@@ -3,7 +3,7 @@
 // NaviMus's Now Playing info and its own nextTrackCommand handler.
 #import <MediaPlayer/MediaPlayer.h>
 #import "ArtistBlock/FZArtistBlock.h"
-#import "Core/FZHook.h"
+#import "Core/FZRemote.h"
 #import "Core/FZLog.h"
 #import "Prefs/FZSettings.h"
 #import "Settings/Kit/FZKitCore.h"
@@ -87,60 +87,21 @@ static NSString *blockedNameIn(NSString *credit) {
 
 #pragma mark - skip
 
-static IMP fz_origAddTarget;
-static IMP fz_origSetInfo;
-static MPRemoteCommandHandlerStatus (^fz_naviMusNext)(MPRemoteCommandEvent *);
-static NSDictionary *fz_lastInfo;          // main thread
 static NSString *fz_lastSongID;            // main thread: the song already looked at while playing
 static NSUInteger fz_skipsInARow;          // main thread
 
 NSString *FZPlayingArtistCredit(void) {
-    id credit = fz_lastInfo[MPMediaItemPropertyArtist];
+    id credit = FZNowPlayingInfo()[MPMediaItemPropertyArtist];
     return [credit isKindOfClass:NSString.class] && [credit length] ? credit : nil;
 }
 
-static id fz_addTargetWithHandler(MPRemoteCommand *self, SEL _cmd, MPRemoteCommandHandlerStatus (^handler)(MPRemoteCommandEvent *)) {
-    id target = ((id (*)(id, SEL, id))fz_origAddTarget)(self, _cmd, handler);
-    if (handler && self == MPRemoteCommandCenter.sharedCommandCenter.nextTrackCommand) {
-        fz_naviMusNext = [handler copy];
-        FZLog("artist block: NaviMus's next-track handler seen");
-    }
-    return target;
-}
-
-// NaviMus's handler is called with an event like the one the system sends for the lock screen's Next
-// button. MPRemoteCommandEvent's -init aborts, so the event comes from its factory
-// +eventWithCommand:mediaRemoteType:options: (private; present in iOS 26.5's MediaPlayer, checked at
-// run time with its exact types), typed by the command's own -mediaRemoteCommandType.
-static MPRemoteCommandEvent *nextTrackEvent(void) {
-    MPRemoteCommand *command = MPRemoteCommandCenter.sharedCommandCenter.nextTrackCommand;
-    Class eventClass = NSClassFromString(@"MPRemoteCommandEvent");
-    SEL make = NSSelectorFromString(@"eventWithCommand:mediaRemoteType:options:");
-    SEL typeOf = NSSelectorFromString(@"mediaRemoteCommandType");
-    Method factory = eventClass ? class_getClassMethod(eventClass, make) : NULL;
-    Method type = command ? class_getInstanceMethod(object_getClass(command), typeOf) : NULL;
-    if (!factory || !type || !FZTypesMatchNoDigits(method_getTypeEncoding(factory), "@@:@I@")
-        || !FZTypesMatchNoDigits(method_getTypeEncoding(type), "I@:")) {
-        FZLogError("artist block: no way to make a next-track event here (factory=%d type=%d)", factory != NULL, type != NULL);
-        return nil;
-    }
-    unsigned int mediaRemoteType = ((unsigned int (*)(id, SEL))method_getImplementation(type))(command, typeOf);
-    return ((id (*)(Class, SEL, id, unsigned int, id))method_getImplementation(factory))(eventClass, make, command, mediaRemoteType, @{});
-}
-
+// NaviMus's own next-track handler, as the lock screen's Next button runs it (FZRemote).
 static BOOL skipToNext(void) {
-    if (!fz_naviMusNext) return NO;
-    @try {
-        MPRemoteCommandEvent *event = nextTrackEvent();
-        return event && fz_naviMusNext(event) == MPRemoteCommandHandlerStatusSuccess;
-    } @catch (NSException *e) {
-        FZLogError("artist block: skipping threw %@", e.name);
-        return NO;
-    }
+    return FZRemoteSend(MPRemoteCommandCenter.sharedCommandCenter.nextTrackCommand);
 }
 
-static void songMayHaveChanged(NSDictionary *info) {
-    fz_lastInfo = info;
+static void songMayHaveChanged(void) {
+    NSDictionary *info = FZNowPlayingInfo();
     if (!FZHidden(FZKeyArtistBlock)) return;
     id songID = info[MPNowPlayingInfoPropertyExternalContentIdentifier];
     NSNumber *rate = info[MPNowPlayingInfoPropertyPlaybackRate];
@@ -169,20 +130,10 @@ static void songMayHaveChanged(NSDictionary *info) {
     (void)skipped; // release builds compile FZLog out
 }
 
-static void fz_setNowPlayingInfo(id self, SEL _cmd, NSDictionary *info) {
-    ((void (*)(id, SEL, NSDictionary *))fz_origSetInfo)(self, _cmd, info);
-    NSDictionary *copy = [info copy];
-    dispatch_async(dispatch_get_main_queue(), ^{ songMayHaveChanged(copy); });
-}
-
 void FZInstallArtistBlock(void) {
-    // Public MediaPlayer API, not NaviMus symbols. Installed after lock screen lyrics, this sees NaviMus's
-    // own info only: lyrics re-sends go straight to the original setter.
-    BOOL handler = FZHookInstanceMethodNamed(@"MPRemoteCommand", @"addTargetWithHandler:", "@@:@?",
-                                             (IMP)fz_addTargetWithHandler, &fz_origAddTarget, "artist-block.handler");
-    BOOL info = handler && FZHookInstanceMethodNamed(@"MPNowPlayingInfoCenter", @"setNowPlayingInfo:", "v@:@",
-                                                     (IMP)fz_setNowPlayingInfo, &fz_origSetInfo, "artist-block.info");
-    if (handler && info) FZLog("artist block installed (%@, %lu blocked)", FZHidden(FZKeyArtistBlock) ? @"on" : @"off",
-                               (unsigned long)FZBlockedArtists().count);
-    else FZLogError("artist block: hooks incomplete (handler=%d info=%d); nothing is skipped", handler, info);
+    // NaviMus's Now Playing info and its next-track handler come from FZRemote (installed before this).
+    [NSNotificationCenter.defaultCenter addObserverForName:FZNowPlayingDidChangeNotification object:nil queue:nil
+                                                usingBlock:^(NSNotification *note) { songMayHaveChanged(); }];
+    FZLog("artist block installed (%@, %lu blocked)", FZHidden(FZKeyArtistBlock) ? @"on" : @"off",
+          (unsigned long)FZBlockedArtists().count);
 }

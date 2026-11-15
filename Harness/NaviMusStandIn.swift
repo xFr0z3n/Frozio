@@ -7,6 +7,7 @@
 // Launch arguments: -FZHarnessLight YES asks for light mode the way NaviMus's appearance setting does
 // (preferredColorScheme), to check the redesign keeps it dark.
 import AppIntents
+import MediaPlayer
 import SwiftUI
 import UIKit
 
@@ -100,6 +101,7 @@ struct PlayAlbumIntent: AppIntent {
     @Parameter(title: "Search") var albumSearchTerm: String?
     func perform() async throws -> some IntentResult {
         NSLog("[harness] PlayAlbumIntent performed: %@", album?.id ?? "nil")
+        await StandInPlayer.shared.play("so-1")
         return .result()
     }
 }
@@ -109,6 +111,7 @@ struct PlaySongIntent: AppIntent {
     @Parameter(title: "Name") var name: String?
     func perform() async throws -> some IntentResult {
         NSLog("[harness] PlaySongIntent performed: %@", entity?.id ?? "nil")
+        if let id = entity?.id { await StandInPlayer.shared.play(id) }
         return .result()
     }
 }
@@ -165,6 +168,9 @@ private struct HomeTab: View {
     }
 }
 
+private let standInSongs = ["Purpose General", "Face The Flame", "Lose Control", "Fourth Song", "Fifth Song",
+                            "Sixth Song", "Seventh Song", "Eighth Song"]
+
 // Named and shaped like NaviMus's album page root (Arpeggi.AlbumViewWrapper: album, albumID), so the
 // redesign's page interception finds it the same way.
 private struct AlbumViewWrapper: View {
@@ -179,8 +185,15 @@ private struct AlbumViewWrapper: View {
             }
             .frame(maxWidth: .infinity)
             .listRowSeparator(.hidden)
-            ForEach(1..<11) { n in
-                HStack { Text("\(n)").foregroundStyle(.secondary); Text("Track \(n)"); Spacer(); Text("3:2\(n % 10)").foregroundStyle(.secondary) }
+            // NaviMus's rows: the title, its download ring ("circle.dotted"), then a ⋯ labelled "More".
+            ForEach(Array(standInSongs.enumerated()), id: \.offset) { n, title in
+                HStack {
+                    Text(title)
+                    Spacer()
+                    Image(systemName: "circle.dotted")
+                    Button { NSLog("[harness] NaviMus row More: %@", title) } label: { Image(systemName: "ellipsis") }
+                        .accessibilityLabel("More")
+                }
             }
         }
         .listStyle(.plain)
@@ -194,7 +207,11 @@ private struct AlbumViewWrapper: View {
         }
         .safeAreaInset(edge: .top) {
             HStack(spacing: 24) {
-                Button { NSLog("[harness] NaviMus shuffle tapped") } label: { Image(systemName: "shuffle") }
+                Button {
+                    NSLog("[harness] NaviMus shuffle tapped")
+                    MPRemoteCommandCenter.shared().changeShuffleModeCommand.currentShuffleType = .items
+                    StandInPlayer.shared.play("so-3")
+                } label: { Image(systemName: "shuffle") }
                     .accessibilityLabel("Shuffle")
                 Button { NSLog("[harness] NaviMus download tapped") } label: { Image(systemName: "arrow.down.circle") }
                     .accessibilityLabel("Download")
@@ -267,5 +284,37 @@ private struct MiniPlayer: View {
             Image(systemName: "forward.fill")
         }
         .padding(.horizontal, 14)
+    }
+}
+
+// NaviMus's player as the system sees it: Now Playing info with the song ID, and a play/pause handler.
+@MainActor
+final class StandInPlayer {
+    static let shared = StandInPlayer()
+    private var song: String?
+    private var playing = false
+
+    private init() {
+        MPRemoteCommandCenter.shared().togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self, let song = self.song else { return .noActionableNowPlayingItem }
+            self.playing.toggle()
+            self.publish(song)
+            NSLog("[harness] toggle play/pause → %@", self.playing ? "playing" : "paused")
+            return .success
+        }
+    }
+
+    func play(_ id: String) {
+        song = id
+        playing = true
+        publish(id)
+    }
+
+    private func publish(_ id: String) {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+            MPMediaItemPropertyTitle: id, MPMediaItemPropertyArtist: "Harness Artist",
+            MPNowPlayingInfoPropertyExternalContentIdentifier: id,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: 0.0, MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
+        ]
     }
 }

@@ -249,3 +249,22 @@ The first rebuilt page of the 1:1 redesign (`REDESIGN_PLAN.md`), laid over NaviM
   - on device with NaviMus's real intents, controls and server
   - NaviMus's real control labels: debug builds log them when the page opens
   - the song tap plays that song through `PlaySongIntent`; whether NaviMus queues the rest of the album after it is NaviMus's own behaviour, to be checked on device
+
+## Redesign R4b: the album page 1:1 (`feat/redesign-album-1to1`)
+
+Fixes from the user's device test of build 34, with chroma.pw's own page as the reference.
+
+- **1:1 with taurus's album page (GPL-3.0):**
+  - **Field:** the page's field is now taurus's `SGRArtworkField`, ported as `FZRArtworkField` / `FZRFlow` / `FZRFluid`. It's the cover's field colour fading to black down the page, which gives chroma.pw's deep brown, not a flat colour.
+  - **Hero:** the cover fills the top down to 56 pt below the title's top (`SGRHeaderInfoTitleRise`), measured at 472 pt on a 390 pt screen.
+  - **Info (`SGRHeaderInfo`):** Title 2 bold primary, Body secondary, Footnote tertiary, gaps 2 / 4.
+  - **Play capsule (`SGRPlayCapsule`):** Subheadline semibold up to Large, the glyph in a 44 pt box, the glyph and word in the field's colour.
+  - **Top buttons:** back is a bare chevron and ⋯ is pinned in a glass circle, as chroma.pw shows on iOS 17.
+- **Play ⇄ Pause:** the capsule reads Pause while one of this album's songs plays. Tapping it then runs NaviMus's own play/pause handler; otherwise NaviMus's `PlayAlbumIntent`.
+- **Playing row:** the playing song's title is in the accent, with three moving bars, which hold still while paused. Shuffle's glyph is in the accent while NaviMus shuffles.
+- **Shuffle, download, ⋯, and each row's ⋯ now reach NaviMus's own controls.** On device the search had returned the rebuilt page's own elements instead of NaviMus's. It now skips hidden views and the rebuilt page, walks UIKit subviews as well as the accessibility tree, and anchors a row's ⋯ to that song's title (NaviMus labels a row "title", "circle.dotted", "More").
+- **NaviMus's back and ⋯ no longer show through:** a flag on its navigation bar makes `-setAlpha:` and `-layoutSubviews` keep it hidden while a rebuilt page is on top, through UIKit's and SwiftUI's own updates.
+- **New options** (Frozio settings → Appearance → **Redesigned pages**): circle behind back (off), circle behind ⋯ (on), circles behind shuffle and download (on), shuffle button, download button, genre / type / year line.
+- **FZRemote** (`Source/Core/FZRemote.{h,m}`): one owner for NaviMus's command handlers (all commands, not just next-track) and its Now Playing info. Blocked artists now uses it.
+- **Tested (harness):** the stand-in now has NaviMus's row labels and a player that sets Now Playing and handles play/pause. Play → `PlayAlbumIntent`, then Pause with the first row in the accent and moving bars; Pause → NaviMus's toggle ("paused"); Shuffle → NaviMus's own shuffle (glyph in the accent, the shuffled song highlighted); Download → NaviMus's own; ⋯ on "Face The Flame" → that row's own ⋯; back restores the bar.
+- **Not tested:** on device. A debug build logs every NaviMus control it considers, with its class.

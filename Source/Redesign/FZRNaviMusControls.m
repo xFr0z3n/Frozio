@@ -41,75 +41,137 @@ static NSString *pageString(UIViewController *vc, NSString *path) {
 
 #pragma mark - NaviMus's controls through accessibility
 
-static NSArray *accessibilityChildren(id element) {
-    NSArray *children = [element respondsToSelector:@selector(accessibilityElements)] ? [element accessibilityElements] : nil;
-    if (children.count) return children;
-    NSMutableArray *list = [NSMutableArray array];
-    NSInteger count = [element respondsToSelector:@selector(accessibilityElementCount)] ? [element accessibilityElementCount] : 0;
-    for (NSInteger i = 0; i < count && i < 500; i++) {
-        id child = [element accessibilityElementAtIndex:i];
-        if (child) [list addObject:child];
+static char kOverlayKey;
+static char kBarHiddenKey;
+
+static BOOL viewIsShown(UIView *view) {
+    for (UIView *v = view; v; v = v.superview) {
+        if (v.hidden || v.alpha < 0.01 || objc_getAssociatedObject(v, &kOverlayKey)) return NO;
     }
-    if (!list.count && [element isKindOfClass:UIView.class]) [list addObjectsFromArray:((UIView *)element).subviews];
+    return YES;
+}
+
+// An element's children: its accessibility children, and for a view its subviews too (NaviMus's list cells
+// sit in UIKit views SwiftUI doesn't always list), hidden views and the rebuilt page left out.
+static NSArray *childrenOf(id element) {
+    NSMutableArray *list = [NSMutableArray array];
+    NSArray *children = [element respondsToSelector:@selector(accessibilityElements)] ? [element accessibilityElements] : nil;
+    if (children.count) [list addObjectsFromArray:children];
+    else {
+        NSInteger count = [element respondsToSelector:@selector(accessibilityElementCount)] ? [element accessibilityElementCount] : 0;
+        for (NSInteger i = 0; i < count && i < 500; i++) {
+            id child = [element accessibilityElementAtIndex:i];
+            if (child) [list addObject:child];
+        }
+    }
+    if ([element isKindOfClass:UIView.class]) {
+        for (UIView *sub in ((UIView *)element).subviews) if (![list containsObject:sub]) [list addObject:sub];
+    }
     return list;
 }
 
-static void collect(id element, NSUInteger depth, NSMutableArray *found) {
-    if (!element || depth > 40 || found.count > 400) return;
-    if ([element isAccessibilityElement]) [found addObject:element];
-    for (id child in accessibilityChildren(element)) collect(child, depth + 1, found);
+static void collect(id element, NSUInteger depth, NSMutableArray *found, NSHashTable *seen) {
+    if (!element || depth > 40 || found.count > 600 || [seen containsObject:element]) return;
+    [seen addObject:element];
+    if ([element isKindOfClass:UIView.class] && !viewIsShown(element)) return;
+    if ([element isAccessibilityElement] && [element accessibilityLabel].length) [found addObject:element];
+    for (id child in childrenOf(element)) collect(child, depth + 1, found, seen);
 }
 
-static char kOverlayKey;
-
 // NaviMus's page as it really is for an instant: the rebuilt page over it out of the way and its navigation
-// bar (whose drawing the rebuilt page hides) back. SwiftUI and UIKit only search and activate controls that
-// are reachable; no frame is drawn in between, so it never shows.
+// bar back. SwiftUI and UIKit only list and activate controls that are reachable; no frame is drawn in
+// between, so it never shows.
 static void withNaviMusShown(UIViewController *page, UIView *cover, void (^work)(void)) {
     UINavigationBar *bar = page.navigationController.navigationBar;
     BOOL coverWasHidden = cover.hidden;
-    CGFloat barAlpha = bar.alpha;
+    id barFlag = objc_getAssociatedObject(bar, &kBarHiddenKey);
     cover.hidden = YES;
+    objc_setAssociatedObject(bar, &kBarHiddenKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    CGFloat barAlpha = bar.alpha;
     bar.alpha = 1;
     @try {
         work();
     } @finally {
         cover.hidden = coverWasHidden;
         bar.alpha = barAlpha;
+        objc_setAssociatedObject(bar, &kBarHiddenKey, barFlag, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
 
-BOOL FZRActivateNaviMusControl(UIViewController *page, NSArray<NSString *> *labels) {
+__attribute__((unused)) static NSString *describe(id element) {
+    return [NSString stringWithFormat:@"\"%@\"%@ <%@>", [element accessibilityLabel],
+            ([element accessibilityTraits] & UIAccessibilityTraitButton) ? @" button" : @"", NSStringFromClass([element class])];
+}
+
+BOOL FZRActivateNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels) {
     UIView *root = page.view;
     if (!root) return NO;
     UIView *cover = nil;
     for (UIView *sub in root.subviews) if (objc_getAssociatedObject(sub, &kOverlayKey)) cover = sub;
     NSMutableArray *elements = [NSMutableArray array];
     withNaviMusShown(page, cover, ^{
-        collect(root, 0, elements);
-        if (page.navigationController.navigationBar) collect(page.navigationController.navigationBar, 0, elements);
+        NSHashTable *seen = [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality];
+        collect(root, 0, elements, seen);
+        if (page.navigationController.navigationBar) collect(page.navigationController.navigationBar, 0, elements, seen);
     });
-    for (NSString *wanted in labels) {
-        for (id element in elements) {
-            NSString *label = [element accessibilityLabel];
-            if (!label || [label caseInsensitiveCompare:wanted] != NSOrderedSame) continue;
+    // With an anchor, only what follows it: NaviMus labels a row "<title>", its download ring, then "More".
+    NSUInteger start = 0;
+    if (after.length) {
+        start = NSNotFound;
+        for (NSUInteger i = 0; i < elements.count; i++) {
+            NSString *label = [elements[i] accessibilityLabel];
+            if ([label caseInsensitiveCompare:after] == NSOrderedSame || [label hasPrefix:[after stringByAppendingString:@","]]) { start = i + 1; break; }
+        }
+    }
+    for (NSString *wanted in (start == NSNotFound ? @[] : labels)) {
+        for (NSUInteger i = start; i < elements.count; i++) {
+            id element = elements[i];
+            if ([[element accessibilityLabel] caseInsensitiveCompare:wanted] != NSOrderedSame) continue;
             __block BOOL done = NO;
             withNaviMusShown(page, cover, ^{ done = [element accessibilityActivate]; });
-            FZLog("redesign: NaviMus control \"%@\" activated=%d", label, done);
+            FZLog("redesign: NaviMus control %@ activated=%d", describe(element), done);
             if (done) return YES;
+            if (after.length) break;   // a row's own control or none: never the next row's
         }
     }
 #ifdef FROZIO_DEBUG
     NSMutableArray *names = [NSMutableArray array];
-    for (id element in elements) {
-        NSString *label = [element accessibilityLabel];
-        if (label.length) [names addObject:[NSString stringWithFormat:@"\"%@\"%@", label,
-            ([element accessibilityTraits] & UIAccessibilityTraitButton) ? @" (button)" : @""]];
-    }
-    FZLog("redesign: none of %@ among NaviMus's %lu elements: %@", [labels componentsJoinedByString:@"/"],
-          (unsigned long)elements.count, [names componentsJoinedByString:@", "]);
+    for (id element in elements) [names addObject:describe(element)];
+    FZLog("redesign: none of %@%@ among NaviMus's %lu elements: %@", [labels componentsJoinedByString:@"/"],
+          after.length ? @" after the anchor" : @"", (unsigned long)elements.count, [names componentsJoinedByString:@", "]);
 #endif
     return NO;
+}
+
+#pragma mark - NaviMus's navigation bar under a rebuilt page
+
+static IMP fz_origBarAlpha, fz_origBarLayout;
+
+// While a rebuilt page is on top, UIKit's and SwiftUI's own updates can't bring the bar's drawing back.
+static void fz_barSetAlpha(UINavigationBar *self, SEL _cmd, CGFloat alpha) {
+    if (objc_getAssociatedObject(self, &kBarHiddenKey)) alpha = 0;
+    ((void (*)(id, SEL, CGFloat))fz_origBarAlpha)(self, _cmd, alpha);
+}
+
+static void fz_barLayout(UINavigationBar *self, SEL _cmd) {
+    ((void (*)(id, SEL))fz_origBarLayout)(self, _cmd);
+    if (objc_getAssociatedObject(self, &kBarHiddenKey) && self.alpha > 0) self.alpha = 0;
+}
+
+void FZRSetNaviMusBarHidden(UIViewController *page, BOOL hidden, id<UIViewControllerTransitionCoordinator> transition) {
+    UINavigationBar *bar = page.navigationController.navigationBar;
+    if (!bar) return;
+    void (^apply)(BOOL) = ^(BOOL hide) {
+        objc_setAssociatedObject(bar, &kBarHiddenKey, hide ? @YES : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        bar.alpha = hide ? 0 : 1;
+    };
+    if (!transition) { apply(hidden); return; }
+    if (hidden) apply(YES);   // gone from the start of the push, never drawn over the cover
+    [transition animateAlongsideTransition:^(id context) { if (!hidden) apply(NO); }
+                                completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        // A cancelled swipe back leaves the rebuilt page on top.
+        apply(context.isCancelled ? !hidden : hidden);
+    }];
 }
 
 #pragma mark - pages
@@ -146,7 +208,7 @@ static void cover(UIViewController *vc) {
     // The labels of NaviMus's own controls on the page, to wire the rebuilt page's buttons to them.
     __weak UIViewController *weakVC = vc;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (weakVC) FZRActivateNaviMusControl(weakVC, @[@"\u2063frozio-probe-no-such-control"]);
+        if (weakVC) FZRActivateNaviMusControl(weakVC, nil, @[@"\u2063frozio-probe-no-such-control"]);
     });
 #endif
 }
@@ -187,6 +249,9 @@ void FZRInstallPages(void) {
                                     (IMP)fz_setViewControllers, &fz_origSetControllers, "redesign.stack");
     BOOL layout = (push || set) && FZHookInstanceMethod(UIViewController.class, @selector(viewDidLayoutSubviews), "v@:",
                                                (IMP)fz_viewDidLayoutSubviews, &fz_origLayout, "redesign.layout");
+    BOOL barAlpha = FZHookInstanceMethod(UINavigationBar.class, @selector(setAlpha:), "v@:d", (IMP)fz_barSetAlpha, &fz_origBarAlpha, "redesign.bar.alpha");
+    BOOL barLayout = FZHookInstanceMethod(UINavigationBar.class, @selector(layoutSubviews), "v@:", (IMP)fz_barLayout, &fz_origBarLayout, "redesign.bar.layout");
+    if (!barAlpha || !barLayout) FZLogError("redesign: NaviMus's bar may show through (alpha=%d layout=%d)", barAlpha, barLayout);
     FZLog("redesign: pages %@ (push=%d stack=%d layout=%d)", (push || set) && layout ? @"installed" : @"NOT installed", push, set, layout);
     (void)layout;
 }

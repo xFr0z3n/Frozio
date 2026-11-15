@@ -14,6 +14,7 @@
 #import "Redesign/Data/FZServer.h"
 #import "Lyrics/FZLockScreenLyrics.h"
 #import "ArtistBlock/FZArtistBlock.h"
+#import "Core/FZRemote.h"
 
 __attribute__((constructor)) static void FrozioInit(void) {
     @autoreleasepool {
@@ -41,6 +42,7 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZInstallLockScreenLyrics();
         // Blocked artists: after lyrics, so it sees NaviMus's own Now Playing info; before main(), so
         // NaviMus's next-track handler is seen as it registers.
+        FZInstallRemote();          // NaviMus's command handlers and Now Playing (after lyrics)
         FZInstallArtistBlock();
     }
 }
