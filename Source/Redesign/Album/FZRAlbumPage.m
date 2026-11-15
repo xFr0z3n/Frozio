@@ -689,31 +689,34 @@ static NSString *string(id value) {
 }
 
 // Download: the Download item of NaviMus's own ⋯ menu (its album download lives there). A SwiftUI menu has no items
-// until it shows (its button carries an empty placeholder menu, and so does its interaction's configuration;
-// checked in the harness), so the menu opens and its item is pressed the moment it exists.
+// until it first shows, so NaviMus's ⋯ opens out of sight, Download is performed from it and it closes again: one
+// tap, no menu on screen (FZRPerformMenuActionUnseen).
 - (void)download {
     UIWindow *window = self.view.window;
     CGPoint more = [_more convertPoint:CGPointMake(CGRectGetMidX(_more.bounds), CGRectGetMidY(_more.bounds)) toView:window];
     NSArray *labels = @[@"Download", @"Download Album", @"Download All", @"Remove Download", @"Remove Downloads", @"Delete Download"];
-    if (FZRPerformMenuAction(window, more, labels)) return;
     if (FZRActivateNaviMusControl(_naviMusPage, nil, @[@"Download", @"Downloaded", @"Remove Download"])) return;
-    if (!FZRTap(window, more)) {
-        [self report:@"download" ok:NO why:@"NaviMus's ⋯ menu couldn't be opened."];
-        return;
-    }
+    __weak typeof(self) weakSelf = self;
+    FZRPerformMenuActionUnseen(window, more, labels, ^(BOOL ok) {
+        if (ok || !weakSelf) return;
+        // The menu is on screen now (it had no such action, or never opened unseen): its item by accessibility.
+        [weakSelf pickMenuItem:labels];
+    });
+}
+
+- (void)pickMenuItem:(NSArray<NSString *> *)labels {
     __block NSUInteger tries = 0;
     __block void (^pick)(void);
     __weak typeof(self) weakSelf = self;
     pick = ^{
         if (FZRActivateMenuItem(labels) || !weakSelf) { pick = nil; return; }
-        if (++tries < 40) {
+        if (++tries < 20) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (pick) pick(); });
         } else {
-            FZLogError("redesign album: NaviMus's menu has no Download item it would show; left open");
+            FZLogError("redesign album: NaviMus's menu has no Download item; left open");
             pick = nil;
         }
     };
-    // SwiftUI builds the menu's items only as it shows them, so the item is pressed the moment it exists.
     dispatch_async(dispatch_get_main_queue(), ^{ if (pick) pick(); });
 }
 

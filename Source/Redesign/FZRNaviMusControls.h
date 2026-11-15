@@ -24,6 +24,11 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
 /// showing the menu: a UIButton's menu, or a context-menu interaction's. NO when there's none.
 BOOL FZRPerformMenuAction(UIWindow *window, CGPoint point, NSArray<NSString *> *labels);
 
+/// FZRPerformMenuAction, and where the menu has no items yet (a SwiftUI menu fills them when it first shows), its
+/// control at `point` is tapped, the menu it opens is kept out of sight, the action is performed and the menu
+/// closed. If the menu has no such action it's shown for the user to pick. Completion on the main thread.
+void FZRPerformMenuActionUnseen(UIWindow *window, CGPoint point, NSArray<NSString *> *labels, void (^completion)(BOOL ok));
+
 /// Activates an item of the menu on screen whose label is one of `labels` (or starts with one and a space).
 BOOL FZRActivateMenuItem(NSArray<NSString *> *labels);
 
