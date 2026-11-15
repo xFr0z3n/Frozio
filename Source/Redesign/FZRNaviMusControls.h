@@ -20,6 +20,10 @@ BOOL FZRActivateNaviMusControl(UIViewController *page, NSString *after, NSArray<
 /// what it opens is anchored where the user tapped.
 BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels, CGPoint alignTo);
 
+/// Runs the action titled one of `labels` from the menu of the control under `point` (window coordinates) without
+/// showing the menu: a UIButton's menu, or a context-menu interaction's. NO when there's none.
+BOOL FZRPerformMenuAction(UIWindow *window, CGPoint point, NSArray<NSString *> *labels);
+
 /// Activates an item of the menu on screen whose label is one of `labels` (or starts with one and a space).
 BOOL FZRActivateMenuItem(NSArray<NSString *> *labels);
 

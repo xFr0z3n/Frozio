@@ -182,6 +182,17 @@ private struct AlbumViewWrapper: View {
                 Cover(hue: album.hue, size: 220)
                 Text(album.title).font(.title2.bold())
                 Text(album.artist).foregroundStyle(naviMusTint)
+                HStack(spacing: 24) {
+                    Button {
+                        NSLog("[harness] NaviMus header shuffle (labelled Repeat) tapped")
+                        StandInPlayer.shared.play("so-3")
+                    } label: { Image(systemName: "shuffle") }
+                        .accessibilityLabel("Repeat")
+                    Button { StandInPlayer.shared.play("so-1") } label: { Image(systemName: "play.fill") }
+                        .accessibilityLabel("Play")
+                    Button { } label: { Image(systemName: "heart") }
+                        .accessibilityLabel("Love")
+                }
             }
             .frame(maxWidth: .infinity)
             .listRowSeparator(.hidden)
@@ -202,19 +213,16 @@ private struct AlbumViewWrapper: View {
         .listStyle(.plain)
         .navigationTitle(album.title)
         .navigationBarTitleDisplayMode(.inline)
-        // As on NaviMus's album page (device log, build 35): Shuffle, Play, Download and More are items of the
-        // navigation bar, not of the page.
+        // As on NaviMus's album page (device logs, builds 35–37): the bar carries only ⋯, a SwiftUI menu that
+        // accessibility doesn't list on iOS 17; the album's download is one of its items.
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
-                    NSLog("[harness] NaviMus shuffle tapped")
-                    MPRemoteCommandCenter.shared().changeShuffleModeCommand.currentShuffleType = .items
-                    StandInPlayer.shared.play("so-3")
-                } label: { Image(systemName: "shuffle") }
-                    .accessibilityLabel("Shuffle")
-                Button { NSLog("[harness] NaviMus download tapped") } label: { Image(systemName: "arrow.down.circle") }
-                    .accessibilityLabel("Download")
-                Menu { Button("Add to Playlist") {}; Button("Go to Artist") {} } label: { Image(systemName: "ellipsis") }
+            ToolbarItem(placement: .topBarTrailing) {
+                // NaviMus's album download is an item of its ⋯ menu (device log, build 37).
+                Menu {
+                    Button("Download") { NSLog("[harness] NaviMus menu: Download album") }
+                    Button("Add to Playlist") {}
+                    Button("Go to Artist") {}
+                } label: { Image(systemName: "ellipsis") }
                     .accessibilityLabel("More")
             }
         }
@@ -263,6 +271,20 @@ private struct SettingsTab: View {
                     Toggle("Pre-cache", isOn: $precache)
                     Toggle("Scrobble", isOn: $scrobble)
                     NavigationLink("Transcoding") { Text("Transcoding") }
+                }
+                Section("Glass reference (Apple's own)") {
+                    ZStack {
+                        LinearGradient(colors: [.orange, .purple, .blue], startPoint: .leading, endPoint: .trailing)
+                            .frame(height: 90)
+                        HStack(spacing: 20) {
+                            if #available(iOS 26.0, *) {
+                                Button { } label: { Image(systemName: "shuffle").frame(width: 30, height: 30) }
+                                    .buttonStyle(.glass)
+                                Image(systemName: "arrow.down").frame(width: 48, height: 48)
+                                    .glassEffect(.regular, in: .circle)
+                            }
+                        }
+                    }
                 }
                 Section("Appearance") {
                     NavigationLink("Player Style") { Text("Player Style") }
