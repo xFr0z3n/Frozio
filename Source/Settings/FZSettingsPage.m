@@ -304,7 +304,9 @@ UIViewController *FZMakeSettingsPage(void) {
         FZNotedSection(@"Appearance", appearance, @"Changes to NaviMus's tint apply after you restart the app."),
         FZNotedSection(@"Lyrics", @[lockLyrics], @"Applies right away, from the next line."),
         FZSection(@"Playback", @[blocked]),
-        FZNotedSection(@"Library", @[FZWithSymbol(FZSwitchRow(@"More sort options", @"Year (newest or oldest first) and Favourites for Albums.", FZKeyLibrarySorts), @"arrow.up.arrow.down")], @"Applies the next time a sort menu opens."),
+        FZNotedSection(@"Library", @[FZWithSymbol(FZSwitchRow(@"More sort options", @"Year (newest or oldest first) and Favourites for Albums.", FZKeyLibrarySorts), @"arrow.up.arrow.down"),
+                                      FZWithSymbol(FZSwitchRow(@"Fix wrong covers in lists", @"NaviMus shows an earlier album's cover on a reused row.", @"fz.fix.coverReuse"), @"photo.on.rectangle")],
+                       @"Applies the next time a sort menu opens or a list scrolls."),
         FZNotedSection(@"Fixes", @[guard], FZRestartNote),
     ]];
 #ifdef FROZIO_DEBUG

@@ -7,7 +7,8 @@
 NSNotificationName const FZRQueueDidChangeNotification = @"fz.redesign.queueDidChange";
 
 static __weak id sManager;
-static IMP fz_origItemChanged, fz_origRoute, fz_origFinished;
+static IMP fz_origItemChanged, fz_origRoute, fz_origFinished, fz_origAddObserver;
+static Class sManagerClass;
 
 static void remember(id manager, const char *how) {
     if (!manager || manager == sManager) return;
@@ -38,6 +39,13 @@ static void fz_finished(id self, SEL _cmd, id note) {
     changed();
 }
 
+// Swift calls AudioManager's own methods directly, so the hooks above never ran on device (build 43). It registers
+// for notifications when it starts, through NSNotificationCenter: the observer is the AudioManager itself.
+static void fz_addObserver(NSNotificationCenter *self, SEL _cmd, id observer, SEL selector, NSNotificationName name, id object) {
+    ((void (*)(id, SEL, id, SEL, NSNotificationName, id))fz_origAddObserver)(self, _cmd, observer, selector, name, object);
+    if (sManagerClass && observer && [observer isKindOfClass:sManagerClass]) remember(observer, "addObserver");
+}
+
 NSDictionary<NSString *, id> *FZRNaviMusQueue(void) {
     id manager = sManager;
     Class bridge = NSClassFromString(@"FZNaviMus");
@@ -65,5 +73,8 @@ void FZRInstallQueue(void) {
     BOOL item = FZHookInstanceMethodNamed(name, @"handleItemChanged", "v@:", (IMP)fz_itemChanged, &fz_origItemChanged, "queue.itemChanged");
     BOOL route = FZHookInstanceMethodNamed(name, @"updateCurrentRoute", "v@:", (IMP)fz_route, &fz_origRoute, "queue.route");
     BOOL finished = FZHookInstanceMethodNamed(name, @"playerDidFinishPlaying:", "v@:@", (IMP)fz_finished, &fz_origFinished, "queue.finished");
-    FZLog("queue: hooks %d/%d/%d", item, route, finished);
+    sManagerClass = NSClassFromString(name);
+    BOOL observe = sManagerClass && FZHookInstanceMethod(NSNotificationCenter.class, @selector(addObserver:selector:name:object:), "v@:@:@@",
+                                                         (IMP)fz_addObserver, &fz_origAddObserver, "queue.addObserver");
+    FZLog("queue: hooks %d/%d/%d/%d", item, route, finished, observe);
 }
