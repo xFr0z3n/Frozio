@@ -186,7 +186,13 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
         CGFloat edge = lead ? 16 : width - 16;
         // On a page with a search field, the circles sit a little higher so they stay clear of it once the large
         // title has collapsed (the user's screenshot, build 43: they rested on the field).
-        CGFloat lift = bar.topItem.searchController ? -4 : 0;
+        // Only once the large title has collapsed: above it, the buttons have the bar's whole top row (lifted there,
+        // they were cut off at the top, device build 44).
+        BOOL largeTitle = NO;
+        for (UIView *sub in bar.subviews) {
+            if ([NSStringFromClass(sub.class) containsString:@"LargeTitleView"] && !sub.hidden && sub.alpha > 0.5 && sub.bounds.size.height > 20) largeTitle = YES;
+        }
+        CGFloat lift = bar.topItem.searchController && !largeTitle ? -4 : 0;
         for (NSUInteger i = 0; i < group.count; i++) {
             UIView *item = group[i];
             FZRBarRole role = (FZRBarRole)roles[i].integerValue;
@@ -230,6 +236,9 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
                 edge += lead ? side + 8 : -(side + 8);
             }
             CGFloat ty = anyCircle ? lift : 0;
+            // Lifted, the circle reaches past the bar's content area, which clipped its top (device, build 44): the
+            // views between the button and the bar draw outside their bounds.
+            if (ty != 0) for (UIView *v = item.superview; v && v != bar.superview; v = v.superview) if (v.clipsToBounds) v.clipsToBounds = NO;
             if (fabs(item.transform.tx - tx) > 0.5 || fabs(item.transform.ty - ty) > 0.5) item.transform = CGAffineTransformMakeTranslation(tx, ty);
             // White: every layer of the button but the glass; Frozio's own button keeps its look.
             NSArray *filters = filter && role != FZRBarRoleFrozio ? @[filter] : nil;

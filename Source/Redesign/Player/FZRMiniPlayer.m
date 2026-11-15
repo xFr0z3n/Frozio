@@ -107,7 +107,7 @@ static void placeBar(UITabBarController *tabs);
     UIVisualEffectView *_glass;
     UIView *_content;
     UIImageView *_artwork, *_routeIcon;
-    UILabel *_title, *_route;
+    UILabel *_title, *_byline, *_route;
     FZRRoundButton *_download, *_previous, *_play, *_next;
     AVRoutePickerView *_airPlay;
     FZRMiniProgress *_progress;
@@ -133,13 +133,19 @@ static char kBarGlassKey;
     _artwork.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     _title = [UILabel new];
     _title.lineBreakMode = NSLineBreakByTruncatingTail;
+    _title.font = FZRFont(UIFontTextStyleSubheadline, UIFontWeightMedium, UIContentSizeCategoryExtraLarge);
+    _title.textColor = FZRPrimary();
+    _byline = [UILabel new];
+    _byline.lineBreakMode = NSLineBreakByTruncatingTail;
+    _byline.font = FZRFont(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
+    _byline.textColor = FZRSecondary();
     _route = [UILabel new];
     _route.font = FZRFont(UIFontTextStyleFootnote, UIFontWeightMedium, UIContentSizeCategoryExtraLarge);
     _route.textColor = FZRAccent();
     _routeIcon = [UIImageView new];
     _routeIcon.tintColor = FZRAccent();
     _routeIcon.contentMode = UIViewContentModeCenter;
-    for (UIView *v in @[_artwork, _title, _route, _routeIcon]) [_content addSubview:v];
+    for (UIView *v in @[_artwork, _title, _byline, _route, _routeIcon]) [_content addSubview:v];
 
     _airPlay = [AVRoutePickerView new];
     _airPlay.prioritizesVideoDevices = NO;
@@ -213,16 +219,10 @@ static char kBarGlassKey;
     NSDictionary *info = FZNowPlayingInfo();
     NSString *title = info[MPMediaItemPropertyTitle] ?: @"";
     NSString *artist = info[MPMediaItemPropertyArtist] ?: info[MPMediaItemPropertyAlbumArtist] ?: @"";
-    // "Title • Artist" on one line, the artist in the secondary white (chroma.pw).
-    UIFont *font = FZRFont(UIFontTextStyleSubheadline, UIFontWeightMedium, UIContentSizeCategoryExtraLarge);
-    NSMutableAttributedString *line = [[NSMutableAttributedString alloc] initWithString:title
-        attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: FZRPrimary()}];
-    if (artist.length) {
-        [line appendAttributedString:[[NSAttributedString alloc] initWithString:[@" • " stringByAppendingString:artist]
-            attributes:@{NSFontAttributeName: FZRFont(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge),
-                         NSForegroundColorAttributeName: FZRSecondary()}]];
-    }
-    _title.attributedText = line;
+    // "Title • Artist" on one line, the artist in the secondary white (chroma.pw); the title gives way first, so the
+    // artist still shows beside a long title (the user's screenshot, build 44).
+    _title.text = title;
+    _byline.text = artist.length ? [@" • " stringByAppendingString:artist] : nil;
     NSString *symbol = nil;
     NSString *route = routeName(&symbol);
     _route.text = route;
@@ -285,10 +285,14 @@ static char kBarGlassKey;
     }
     CGFloat textX = CGRectGetMaxX(_artwork.frame) + kTextGap;
     CGFloat textWidth = MAX(0, x - 6 - textX);
-    CGFloat titleHeight = ceil(_title.font.lineHeight ?: 20), routeHeight = _route.hidden ? 0 : ceil(_route.font.lineHeight);
-    titleHeight = ceil([_title sizeThatFits:CGSizeMake(textWidth, CGFLOAT_MAX)].height) ?: titleHeight;
+    CGFloat titleHeight = ceil(_title.font.lineHeight), routeHeight = _route.hidden ? 0 : ceil(_route.font.lineHeight);
     CGFloat top = round((b.size.height - titleHeight - routeHeight) / 2);
-    _title.frame = CGRectMake(textX, top, textWidth, titleHeight);
+    CGFloat bylineNatural = _byline.text.length ? ceil([_byline sizeThatFits:CGSizeMake(CGFLOAT_MAX, titleHeight)].width) : 0;
+    CGFloat titleNatural = ceil([_title sizeThatFits:CGSizeMake(CGFLOAT_MAX, titleHeight)].width);
+    CGFloat bylineWidth = MIN(bylineNatural, MAX(textWidth - titleNatural, textWidth * 0.6));
+    CGFloat titleWidth = MIN(titleNatural, MAX(0, textWidth - bylineWidth));
+    _title.frame = CGRectMake(textX, top, titleWidth, titleHeight);
+    _byline.frame = CGRectMake(textX + titleWidth, top, bylineWidth, titleHeight);
     CGFloat icon = _routeIcon.image ? 14 : 0;
     _routeIcon.frame = CGRectMake(textX - 2, top + titleHeight, icon, routeHeight);
     _route.frame = CGRectMake(textX + icon + (icon ? 4 : 0), top + titleHeight, MAX(0, textWidth - icon - 4), routeHeight);
@@ -299,11 +303,11 @@ static char kBarGlassKey;
 
 - (NSArray *)accessibilityElements {
     UIAccessibilityElement *summary = [[UIAccessibilityElement alloc] initWithAccessibilityContainer:self];
-    summary.accessibilityLabel = _title.attributedText.string ?: @"";
+    summary.accessibilityLabel = [NSString stringWithFormat:@"%@%@", _title.text ?: @"", _byline.text ?: @""];
     summary.accessibilityValue = _route.hidden ? nil : _route.text;
     summary.accessibilityHint = @"Opens the player";
     summary.accessibilityTraits = UIAccessibilityTraitButton;
-    summary.accessibilityFrameInContainerSpace = CGRectMake(0, 0, MAX(0, CGRectGetMaxX(_title.frame)), self.bounds.size.height);
+    summary.accessibilityFrameInContainerSpace = CGRectMake(0, 0, MAX(0, CGRectGetMaxX(_byline.frame)), self.bounds.size.height);
     NSMutableArray *elements = [NSMutableArray arrayWithObject:summary];
     for (UIView *button in @[_airPlay, _download, _previous, _next, _play]) if (!button.hidden) [elements addObject:button];
     return elements;

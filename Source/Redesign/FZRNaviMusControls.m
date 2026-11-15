@@ -119,6 +119,8 @@ static NSString *describe(id element) {
 // The buttons to press: with an anchor, the first match after the element labelled `after` (NaviMus labels a row
 // "<title>", its download ring, then "More"), else every match. Buttons only: activating NaviMus's plain "More"
 // element (a row's context menu) put its list into select mode on device (build 36).
+static BOOL sRowTap;   // FZRTapNaviMusRow: a row's title, a plain element, is tapped rather than activated
+
 static NSArray *candidates(NSArray *elements, NSString *after, NSArray<NSString *> *labels) {
     NSUInteger start = 0;
     if (after.length) {
@@ -133,7 +135,7 @@ static NSArray *candidates(NSArray *elements, NSString *after, NSArray<NSString 
     for (NSString *wanted in labels) {
         for (NSUInteger i = start; i < elements.count; i++) {
             id element = elements[i];
-            if (!([element accessibilityTraits] & UIAccessibilityTraitButton)) continue;
+            if (!sRowTap && !([element accessibilityTraits] & UIAccessibilityTraitButton)) continue;
             if ([[element accessibilityLabel] caseInsensitiveCompare:wanted] != NSOrderedSame) continue;
             [found addObject:element];
             if (after.length) break;   // a row's own control or none: never the next row's
@@ -200,7 +202,8 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
 #ifdef FROZIO_HARNESS
         forceTap = [NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessForceTap"];   // iOS 17's path on iOS 26
 #endif
-        for (id element in forceTap ? @[] : found) {
+        // A row is tapped, never activated: activating NaviMus's plain elements put its list into select mode (build 36).
+        for (id element in forceTap || sRowTap ? @[] : found) {
             done = [element accessibilityActivate];
             FZLog("redesign: NaviMus control %@ activated=%d", describe(element), done);
             if (done) return;
@@ -386,6 +389,18 @@ BOOL FZRActivateMenuItem(NSArray<NSString *> *labels) {
     FZLog("redesign: no menu item %@ in windows %@ among %@", [labels componentsJoinedByString:@"/"], windows, [names componentsJoinedByString:@", "]);
 #endif
     return NO;
+}
+
+BOOL FZRTapNaviMusRow(UIViewController *page, NSString *title, CGPoint alignTo) {
+    if (!title.length) return NO;
+    sRowTap = YES;
+    BOOL done = NO;
+    @try {
+        done = FZRPressNaviMusControl(page, nil, @[title], alignTo);
+    } @finally {
+        sRowTap = NO;
+    }
+    return done;
 }
 
 BOOL FZRActivateNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels) {
