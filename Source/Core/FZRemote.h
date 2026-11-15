@@ -21,5 +21,11 @@ BOOL FZNowPlayingIsPlaying(void);         // reported rate above 0
 /// NO when NaviMus has no handler for it or the event can't be made.
 BOOL FZRemoteSend(MPRemoteCommand *command);
 
+/// The same with the event's MediaRemote options (e.g. a shuffle or repeat mode).
+BOOL FZRemoteSendWithOptions(MPRemoteCommand *command, NSDictionary *options);
+
+/// An event for `command` with `options`, as the system would send it (nil if it can't be made). For tests.
+MPRemoteCommandEvent *FZRemoteEvent(MPRemoteCommand *command, NSDictionary *options);
+
 /// Installs both hooks. Call before NaviMus's main(), after FZInstallLockScreenLyrics.
 void FZInstallRemote(void);

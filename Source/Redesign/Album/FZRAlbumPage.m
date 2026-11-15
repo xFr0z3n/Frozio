@@ -7,6 +7,7 @@
 #import "Redesign/Kit/FZRField.h"
 #import "Redesign/Kit/FZGlass.h"
 #import "Redesign/FZRNaviMusControls.h"
+#import "Redesign/FZRTap.h"
 #import "Settings/Kit/FZModPage.h"
 #import "Settings/Kit/FZKitCore.h"
 #import "Core/FZRemote.h"
@@ -46,9 +47,18 @@ static const CGFloat kHairline = 0.5;
     self.isAccessibilityElement = YES;
     self.accessibilityLabel = label;
     self.accessibilityTraits = UIAccessibilityTraitButton;
-    _glass = [[UIVisualEffectView alloc] initWithEffect:FZGlassEffect()];
+    // iOS 26: the system's glass. Before it, the redesign's controls fallback (material.glass.fallback for
+    // controls, SGRGlassInside): thin dark material with a faint ring, as chroma.pw shows on iOS 17 (its circle
+    // reads (37, 26, 23) on a (24, 10, 8) field, ring (58, 47, 44)).
+    BOOL glass = NO;
+    if (@available(iOS 26.0, *)) glass = YES;
+    _glass = [[UIVisualEffectView alloc] initWithEffect:glass ? FZGlassEffect() : [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark]];
     _glass.userInteractionEnabled = NO;
     _glass.clipsToBounds = YES;
+    if (!glass) {
+        _glass.layer.borderWidth = 1;
+        _glass.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
+    }
     [self addSubview:_glass];
     _glyph = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol
         withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:size weight:weight]]];
@@ -235,7 +245,10 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     _artist = infoLabel(FZRFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), FZRSecondary(), 1);
     _artist.userInteractionEnabled = YES;
     _artist.accessibilityTraits = UIAccessibilityTraitButton;
-    _meta = infoLabel(FZRFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), FZRTertiary(), 1);
+    // chroma.pw draws the genre · type · year line semibold at about 90 % white (measured on its album page),
+    // not taurus's tertiary regular.
+    _meta = infoLabel(FZRFont(UIFontTextStyleFootnote, UIFontWeightSemibold, UIContentSizeCategoryExtraLarge),
+                      [UIColor colorWithWhite:1 alpha:0.9], 1);
     for (UIView *v in @[_title, _artist, _meta]) [self addSubview:v];
     _shuffle = [[FZRRoundButton alloc] initWithSymbol:@"shuffle" pointSize:19 weight:UIImageSymbolWeightSemibold label:@"Shuffle"];
     _download = [[FZRRoundButton alloc] initWithSymbol:@"arrow.down" pointSize:19 weight:UIImageSymbolWeightSemibold label:@"Download"];
@@ -632,32 +645,66 @@ static NSString *string(id value) {
     FZRNaviMusPlay(@"Album", _albumID, ^(BOOL ok, NSString *why) { [weakSelf report:@"play the album" ok:ok why:why]; });
 }
 
-// NaviMus's own shuffle on its own album page, so its queue shuffles the way it does itself.
+// Shuffle, as Control Center does it: NaviMus plays the album (unless it already is), then its own shuffle
+// handler turns shuffle on (MediaRemote shuffle mode 3 = items, 1 = off; checked in the harness). Tapped again
+// while this album shuffles, it turns shuffle off.
 - (void)shuffle {
-    if (!FZRActivateNaviMusControl(_naviMusPage, nil, @[@"Shuffle"])) {
-        [self report:@"shuffle" ok:NO why:@"NaviMus's shuffle button wasn't found on its album page."];
-    }
+    MPRemoteCommand *command = MPRemoteCommandCenter.sharedCommandCenter.changeShuffleModeCommand;
+    BOOL on = [self albumIsCurrent] && MPRemoteCommandCenter.sharedCommandCenter.changeShuffleModeCommand.currentShuffleType != MPShuffleTypeOff;
+    __weak typeof(self) weakSelf = self;
+    void (^setShuffle)(BOOL) = ^(BOOL shuffled) {
+        BOOL ok = FZRemoteSendWithOptions(command, @{@"kMRMediaRemoteOptionShuffleMode": shuffled ? @3 : @1});
+        FZLog("redesign album: NaviMus's shuffle %@ → %d", shuffled ? @"on" : @"off", ok);
+        [weakSelf report:@"shuffle" ok:ok why:@"NaviMus didn't take the shuffle command."];
+        [weakSelf showPlayback];
+    };
+    if (on) { setShuffle(NO); return; }
+    if ([self albumIsCurrent]) { setShuffle(YES); return; }
+    FZRNaviMusPlay(@"Album", _albumID, ^(BOOL ok, NSString *why) {
+        if (!ok) { [weakSelf report:@"shuffle the album" ok:NO why:why]; return; }
+        setShuffle(YES);
+    });
 }
 
+// NaviMus's own Download on its page; failing that, its own ⋯ menu's Download item.
 - (void)download {
-    if (!FZRActivateNaviMusControl(_naviMusPage, nil, @[@"Download", @"Downloaded", @"Remove Download"])) {
+    if (FZRActivateNaviMusControl(_naviMusPage, nil, @[@"Download", @"Downloaded", @"Remove Download"])) return;
+    if (![self openNaviMusMenu]) {
         [self report:@"download" ok:NO why:@"NaviMus's download button wasn't found on its album page."];
+        return;
     }
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        // Left open when the menu calls it something else: the user sees NaviMus's own menu and picks.
+        if (!FZRActivateMenuItem(@[@"Download", @"Download Album", @"Download All", @"Remove Download", @"Remove Downloads"])) {
+            FZLogError("redesign album: NaviMus's menu has no Download item; left open");
+        }
+        (void)weakSelf;
+    });
+}
+
+// NaviMus's own ⋯ sits under the rebuilt page's (its bar takes the touch); this runs only if it didn't.
+- (BOOL)openNaviMusMenu {
+    UIWindow *window = self.view.window;
+    CGPoint center = [_more convertPoint:CGPointMake(CGRectGetMidX(_more.bounds), CGRectGetMidY(_more.bounds)) toView:window];
+    return FZRActivateNaviMusControl(_naviMusPage, nil, @[@"More"]) || FZRTap(window, center);
 }
 
 - (void)showMore {
-    if (!FZRActivateNaviMusControl(_naviMusPage, nil, @[@"More"])) {
+    if (![self openNaviMusMenu]) {
         [self report:@"open the menu" ok:NO why:@"NaviMus's ⋯ button wasn't found on its album page."];
     }
 }
 
-// A row's ⋯: NaviMus's own ⋯ on the same song's row (the first "More" after the song's title).
+// A row's ⋯: NaviMus's own ⋯ on the same song's row (the first "More" button after the song's title), tapped
+// where the user tapped so its menu opens there.
 - (void)showSongMenu:(UIButton *)sender {
     CGPoint point = [sender convertPoint:CGPointMake(CGRectGetMidX(sender.bounds), CGRectGetMidY(sender.bounds)) toView:_table];
     NSIndexPath *path = [_table indexPathForRowAtPoint:point];
     if (!path) return;
     NSString *title = string(_songs[(NSUInteger)path.row][@"title"]);
-    if (!FZRActivateNaviMusControl(_naviMusPage, title, @[@"More"])) {
+    CGPoint inWindow = [sender convertPoint:CGPointMake(CGRectGetMidX(sender.bounds), CGRectGetMidY(sender.bounds)) toView:self.view.window];
+    if (!FZRPressNaviMusControl(_naviMusPage, title, @[@"More"], inWindow)) {
         [self report:@"open the song's menu" ok:NO why:@"NaviMus's ⋯ for this song wasn't found on its album page."];
     }
 }

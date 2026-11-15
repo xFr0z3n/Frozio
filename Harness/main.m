@@ -125,6 +125,20 @@ static void startLyricsDemo(void) {
     FZInstallArtistBlock();
     FZInstallScreenCensus();       // debug census + Swift probe, as in a debug device build
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessLyricsDemo"]) startLyricsDemo();
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessShuffleProbe"]) {
+        // Which MediaRemote option makes a shuffle event read "items" (MPShuffleTypeItems = 1).
+        MPRemoteCommand *shuffle = MPRemoteCommandCenter.sharedCommandCenter.changeShuffleModeCommand;
+        for (NSString *key in @[@"kMRMediaRemoteOptionShuffleMode", @"shuffleMode"]) {
+            for (NSNumber *value in @[@0, @1, @2, @3]) {
+                MPChangeShuffleModeCommandEvent *e = (MPChangeShuffleModeCommandEvent *)FZRemoteEvent(shuffle, @{key: value});
+                NSLog(@"[harness] shuffle probe %@=%@ → %@ type %ld", key, value, NSStringFromClass(e.class),
+                      [e respondsToSelector:@selector(shuffleType)] ? (long)e.shuffleType : -1L);
+            }
+        }
+        MPRemoteCommand *repeat = MPRemoteCommandCenter.sharedCommandCenter.changeRepeatModeCommand;
+        MPChangeRepeatModeCommandEvent *r = (MPChangeRepeatModeCommandEvent *)FZRemoteEvent(repeat, @{@"kMRMediaRemoteOptionRepeatMode": @3});
+        NSLog(@"[harness] repeat probe → %@ type %ld", NSStringFromClass(r.class), [r respondsToSelector:@selector(repeatType)] ? (long)r.repeatType : -1L);
+    }
 
     // NaviMus's shape in SwiftUI (NaviMusStandIn.swift).
     Class standIn = NSClassFromString(@"FZHarnessStandIn");

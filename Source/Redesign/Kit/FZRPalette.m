@@ -8,8 +8,11 @@ static const size_t kSample = 64;      // the artwork shrunk to this square befo
 static const size_t kEdgeRows = 10;    // the bottom rows of it averaged into the edge colour
 static const CGFloat kMaxLuminance = 0.07;
 // A field's OKLab lightness ceiling (0.30 with Increase Contrast), and its chroma lift and cap.
-static const CGFloat kFieldLightness = 0.34, kFieldLightnessContrast = 0.30;
-static const CGFloat kFieldChromaLift = 1.3, kFieldChroma = 0.14;
+// Frozio: chroma.pw's current field is darker and duller than taurus's (0.34 / 1.3). Measured on its album page
+// for the same cover (user's screenshots, 2026-11-15): Oklab L 0.165, C 0.025 where these formulas gave L 0.226,
+// C 0.055 from an uncapped source, so the ceiling is chroma.pw's lightness and the lift scales chroma to match.
+static const CGFloat kFieldLightness = 0.165, kFieldLightnessContrast = 0.145;
+static const CGFloat kFieldChromaLift = 0.6, kFieldChroma = 0.14;
 static const CGFloat kBackdropWidth = 160, kBackdropMaxHeight = 400, kBackdropSigma = 12;
 static const CGFloat kDissolveWidth = 96, kDissolveSigma = 5;
 static const CGFloat kFadeFrom = 0.55, kDissolveOpaque = 0.85;

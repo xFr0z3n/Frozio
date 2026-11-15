@@ -15,6 +15,14 @@ void FZRNaviMusOpen(NSString *kind, NSString *identifier, void (^completion)(BOO
 /// after the one labelled `after` (a song's row: its own ⋯). NO when none is found.
 BOOL FZRActivateNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels);
 
+/// The same, falling back to a real tap (FZRTap) where activation is refused (SwiftUI menus on iOS 17). With
+/// `alignTo` (window coordinates, not CGPointZero), NaviMus's list first scrolls the control to that point, so
+/// what it opens is anchored where the user tapped.
+BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels, CGPoint alignTo);
+
+/// Activates an item of the menu on screen whose label is one of `labels` (or starts with one and a space).
+BOOL FZRActivateMenuItem(NSArray<NSString *> *labels);
+
 /// Hides NaviMus's navigation bar's drawing under a rebuilt page (and keeps it hidden through UIKit's and
 /// SwiftUI's own updates), or shows it again; alongside `transition` when there is one.
 void FZRSetNaviMusBarHidden(UIViewController *page, BOOL hidden, id<UIViewControllerTransitionCoordinator> transition);
