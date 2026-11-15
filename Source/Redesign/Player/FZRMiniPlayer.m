@@ -5,6 +5,7 @@
 #import <AVKit/AVKit.h>
 #import <objc/runtime.h>
 #import "Redesign/Player/FZRPlayer.h"
+#import "Redesign/Player/FZRQueue.h"
 #import "Redesign/FZRAppLook.h"
 #import "Redesign/Kit/FZRTokens.h"
 #import "Redesign/Kit/FZGlass.h"
@@ -418,6 +419,7 @@ static void fz_tabsLayout(UITabBarController *self, SEL _cmd) {
 
 void FZRInstallPlayer(void) {
     if (!FZRRedesignActive()) return;
+    FZRInstallQueue();
     BOOL layout = FZHookInstanceMethod(UITabBarController.class, @selector(viewDidLayoutSubviews), "v@:",
                                        (IMP)fz_tabsLayout, &fz_origTabsLayout, "redesign.player.tabs");
     // A song starting or the switch flipping lays the bar out again.

@@ -1,6 +1,7 @@
 // Adapted from taurus/tweak/Sources/Redesigned/Album/AlbumHeader.x, AlbumField.x, AlbumRows.x and Kit/SGRHeaderInfo.m,
 // SGRActionRow.m @ fe3211c (GPL-3.0). See FZRAlbumPage.h.
 #import <MediaPlayer/MediaPlayer.h>
+#import <objc/message.h>
 #import "Redesign/Album/FZRAlbumPage.h"
 #import "Redesign/Data/FZServer.h"
 #import "Redesign/Kit/FZRTokens.h"
@@ -33,6 +34,7 @@ static const UIEdgeInsets kBleed = {600, 0, 600, 0};
 // (measured on chroma.pw's album page at 390 pt: 472 pt).
 static const CGFloat kHeroAspect = 1.21;
 static const CGFloat kHairline = 0.5;
+static const CGFloat kScrollBlur = 24;   // the cover's blur once half the hero has scrolled by
 
 #pragma mark - pieces
 
@@ -284,7 +286,31 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
 - (void)stretchBy:(CGFloat)pull {
     CGFloat width = self.bounds.size.width, hero = [self heroHeightForWidth:width];
     _picture.frame = pull > 0 ? CGRectMake(-pull / 2, -pull, width + pull, hero + pull) : CGRectMake(0, 0, width, hero);
+    // chroma.pw's album page blurs the cover as the list scrolls over it (the user, build 42): none at the top, up to
+    // kScrollBlur once half the hero has gone by.
+    CGFloat progress = pull < 0 ? MIN(1, -pull / (hero * 0.5)) : 0;
+    [self blurPicture:progress * kScrollBlur];
     [self setNeedsLayout];
+}
+
+- (void)blurPicture:(CGFloat)radius {
+    CALayer *layer = _picture.layer;
+    if (radius < 0.25) {
+        if (layer.filters.count) layer.filters = nil;
+        return;
+    }
+    if (!layer.filters.count) {
+        Class cls = NSClassFromString(@"CAFilter");
+        SEL make = NSSelectorFromString(@"filterWithType:");
+        if (![cls respondsToSelector:make]) return;
+        id filter = ((id (*)(id, SEL, NSString *))objc_msgSend)(cls, make, @"gaussianBlur");
+        [filter setValue:@YES forKey:@"inputNormalizeEdges"];
+        layer.filters = @[filter];
+    }
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [layer setValue:@(radius) forKeyPath:@"filters.gaussianBlur.inputRadius"];
+    [CATransaction commit];
 }
 @end
 

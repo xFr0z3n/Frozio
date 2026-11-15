@@ -22,7 +22,7 @@ static IMP fz_origViewDidAppear;
     dispatch_once(&once, ^{ t = [FZEntryTarget new]; });
     return t;
 }
-- (void)open:(UIBarButtonItem *)sender {
+- (void)open:(id)sender {
     UIViewController *top = nil;
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if (![scene isKindOfClass:UIWindowScene.class]) continue;
@@ -66,10 +66,15 @@ static UIImage *FZEntryImage(void) {
 static void FZEnsureEntry(UIViewController *vc) {
     NSArray<UIBarButtonItem *> *items = vc.navigationItem.rightBarButtonItems ?: @[];
     for (UIBarButtonItem *i in items) if ([i.accessibilityIdentifier isEqualToString:kEntryId]) return;
-    UIBarButtonItem *entry = [[UIBarButtonItem alloc] initWithImage:FZEntryImage()
-                                                              style:UIBarButtonItemStylePlain
-                                                             target:[FZEntryTarget shared]
-                                                             action:@selector(open:)];
+    // A button of Frozio's own as the item's view, carrying Frozio's identifier, so the redesign's bar styling knows
+    // it for certain and leaves it as it is (build 42 drew a circle behind it on device).
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+    [button setImage:FZEntryImage() forState:UIControlStateNormal];
+    button.frame = CGRectMake(0, 0, 36, 36);
+    button.accessibilityIdentifier = kEntryId;
+    button.accessibilityLabel = @"Frozio settings";
+    [button addTarget:[FZEntryTarget shared] action:@selector(open:) forControlEvents:UIControlEventTouchUpInside];
+    UIBarButtonItem *entry = [[UIBarButtonItem alloc] initWithCustomView:button];
     entry.accessibilityIdentifier = kEntryId;
     entry.accessibilityLabel = @"Frozio settings";
     vc.navigationItem.rightBarButtonItems = [items arrayByAddingObject:entry];

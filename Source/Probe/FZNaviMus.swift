@@ -54,6 +54,50 @@ public final class FZNaviMus: NSObject {
         run(intent: "Open\(kind)Intent", entity: "\(kind)Entity", label: "_target", id: id, completion: completion)
     }
 
+    /// NaviMus's play queue, read from its AudioManager (Arpeggi.AudioManager, an NSObject; 1.6.1 fields
+    /// _currentQueueItem, _primaryQueue, _secondaryQueue, _continuousQueue, _queueHistory, each a Deque of QueueItem
+    /// { id, song: Song, songFormatInfo, origin }). Keys are those field names; each song is a dictionary of id,
+    /// title, artist, album, coverArt, albumId, artistId and duration (seconds).
+    @objc public static func queue(_ manager: AnyObject) -> [String: Any] {
+        var result: [String: Any] = [:]
+        var mirror: Mirror? = Mirror(reflecting: manager)
+        while let current = mirror {
+            for child in current.children {
+                guard let label = child.label else { continue }
+                switch label {
+                case "_primaryQueue", "_secondaryQueue", "_continuousQueue", "_queueHistory":
+                    result[label] = Mirror(reflecting: child.value).children.compactMap { song(of: $0.value) }
+                case "_currentQueueItem":
+                    if let item = unwrap(child.value), let song = song(of: item) { result[label] = song }
+                default:
+                    break
+                }
+            }
+            mirror = current.superclassMirror
+        }
+        return result
+    }
+
+    private static func unwrap(_ value: Any) -> Any? {
+        let mirror = Mirror(reflecting: value)
+        guard mirror.displayStyle == .optional else { return value }
+        return mirror.children.first?.value
+    }
+
+    private static func song(of item: Any) -> [String: Any]? {
+        guard let song = Mirror(reflecting: item).children.first(where: { $0.label == "song" })?.value else { return nil }
+        var out: [String: Any] = [:]
+        for child in Mirror(reflecting: song).children {
+            guard let label = child.label, let value = unwrap(child.value) else { continue }
+            if ["id", "title", "artist", "album", "coverArt", "albumId", "artistId"].contains(label), let text = value as? String {
+                out[label] = text
+            } else if label == "duration", let seconds = value as? Int {
+                out[label] = seconds
+            }
+        }
+        return out["id"] == nil ? nil : out
+    }
+
     /// Runs one of NaviMus's intents that take no parameters (LikeSongIntent: the playing song; probe build 33).
     @objc public static func perform(_ intentName: String, completion: @escaping (Bool, String?) -> Void) {
         let done: (Bool, String?) -> Void = { ok, why in DispatchQueue.main.async { completion(ok, why) } }
