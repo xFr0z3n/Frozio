@@ -199,14 +199,10 @@ private struct AlbumViewWrapper: View {
         .listStyle(.plain)
         .navigationTitle(album.title)
         .navigationBarTitleDisplayMode(.inline)
+        // As on NaviMus's album page (device log, build 35): Shuffle, Play, Download and More are items of the
+        // navigation bar, not of the page.
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu { Button("Add to Playlist") {}; Button("Go to Artist") {} } label: { Image(systemName: "ellipsis") }
-                    .accessibilityLabel("More")
-            }
-        }
-        .safeAreaInset(edge: .top) {
-            HStack(spacing: 24) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
                     NSLog("[harness] NaviMus shuffle tapped")
                     MPRemoteCommandCenter.shared().changeShuffleModeCommand.currentShuffleType = .items
@@ -215,8 +211,9 @@ private struct AlbumViewWrapper: View {
                     .accessibilityLabel("Shuffle")
                 Button { NSLog("[harness] NaviMus download tapped") } label: { Image(systemName: "arrow.down.circle") }
                     .accessibilityLabel("Download")
+                Menu { Button("Add to Playlist") {}; Button("Go to Artist") {} } label: { Image(systemName: "ellipsis") }
+                    .accessibilityLabel("More")
             }
-            .opacity(0.01)
         }
     }
 }

@@ -485,7 +485,10 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    CGFloat width = self.view.bounds.size.width, top = self.view.safeAreaInsets.top;
+    // Pinned under the status bar (the window's inset): the page's own inset includes NaviMus's bar, which
+    // stays in place (hidden) under the rebuilt page.
+    CGFloat width = self.view.bounds.size.width;
+    CGFloat top = self.view.window ? self.view.window.safeAreaInsets.top : self.view.safeAreaInsets.top;
     CGFloat height = [_header heightForWidth:width];
     if (fabs(_header.frame.size.height - height) > 0.5 || fabs(_header.frame.size.width - width) > 0.5) {
         _header.frame = CGRectMake(0, 0, width, height);

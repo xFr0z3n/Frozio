@@ -268,3 +268,13 @@ Fixes from the user's device test of build 34, with chroma.pw's own page as the 
 - **FZRemote** (`Source/Core/FZRemote.{h,m}`): one owner for NaviMus's command handlers (all commands, not just next-track) and its Now Playing info. Blocked artists now uses it.
 - **Tested (harness):** the stand-in now has NaviMus's row labels and a player that sets Now Playing and handles play/pause. Play → `PlayAlbumIntent`, then Pause with the first row in the accent and moving bars; Pause → NaviMus's toggle ("paused"); Shuffle → NaviMus's own shuffle (glyph in the accent, the shuffled song highlighted); Download → NaviMus's own; ⋯ on "Face The Flame" → that row's own ⋯; back restores the bar.
 - **Not tested:** on device. A debug build logs every NaviMus control it considers, with its class.
+
+## Redesign R4c: NaviMus's bar controls (`fix/redesign-naviMus-controls`)
+
+The user's device log of build 35: the top ⋯ stopped working, and shuffle, download and each row's ⋯ found nothing.
+
+- **Cause 1:** on NaviMus's album page Shuffle, Play, Download, Back and More are **items of the navigation bar** (device log, build 34). Build 35 kept the bar at alpha 0 against show-through, and iOS 17 then leaves an alpha-0 view out of accessibility, so those controls were never listed. The bar is now hidden with an **empty layer mask** and doesn't take touches meanwhile. It draws nothing but stays visible to iOS, so its items are listed and activated. `-layoutSubviews` re-applies the mask if UIKit or SwiftUI resets it. Leaving the page, the bar fades in with the pop.
+- **Cause 2:** a row's "More" was found but didn't activate. Controls were found and activated in two separate steps, and NaviMus's page was shown and hidden again in between, so SwiftUI rebuilt its accessibility nodes and the ones found first were stale. Now they're found and activated in one step, and buttons are tried before plain elements.
+- **The rebuilt page's top buttons** are pinned under the status bar (the window's inset), because the page's own inset now includes NaviMus's bar.
+- **Harness:** the stand-in's Shuffle, Download and More moved into its navigation bar, as on NaviMus. The top ⋯ opens NaviMus's menu from the masked bar; shuffle, download and the ⋯ of "Face The Flame" activate NaviMus's own controls on the first try; back restores the bar.
+- **Not tested:** on device (iOS 17.5.1). If anything still isn't found, the debug log lists every element with the bar's alpha and item counts.
