@@ -20,7 +20,7 @@ extern NSString *const FZRKeyMiniProgress;       // the progress line (on)
 extern NSString *const FZRKeyMiniRoundArtwork;   // a round cover (on, as chroma.pw's)
 extern NSString *const FZRKeyMiniSwipe;          // swipe the bar to change song (on)
 extern NSString *const FZRKeyPlayerContext;      // player: the album name at the top (on)
-extern NSString *const FZRKeyPlayerBackground;   // 0 blurred cover (chroma.pw), 1 colours, 2 fluid, 3 the cover
+extern NSString *const FZRKeyPlayerBackground;   // 0 fluid artwork (chroma.pw's, Kawarp), 1 blurred cover, 2 colours, 3 the cover
 extern NSString *const FZRKeyPlayerRightSlot;    // right of next: 0 sleep timer (chroma.pw), 1 repeat
 extern NSString *const FZRKeyPlayerDownload;     // download beside the title (on)
 extern NSString *const FZRKeyPlayerShuffle;      // shuffle (on)

@@ -54,6 +54,20 @@ public final class FZNaviMus: NSObject {
         run(intent: "Open\(kind)Intent", entity: "\(kind)Entity", label: "_target", id: id, completion: completion)
     }
 
+    /// Runs one of NaviMus's intents that take no parameters (LikeSongIntent: the playing song; probe build 33).
+    @objc public static func perform(_ intentName: String, completion: @escaping (Bool, String?) -> Void) {
+        let done: (Bool, String?) -> Void = { ok, why in DispatchQueue.main.async { completion(ok, why) } }
+        guard let intentType = type(intentName) as? any AppIntent.Type else { return done(false, "\(intentName) not found") }
+        Task { @MainActor in
+            do {
+                _ = try await intentType.init().perform()
+                done(true, nil)
+            } catch {
+                done(false, "\(intentName) failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private static func run(intent intentName: String, entity entityName: String, label: String, id: String,
                             completion: @escaping (Bool, String?) -> Void) {
         let done: (Bool, String?) -> Void = { ok, why in DispatchQueue.main.async { completion(ok, why) } }

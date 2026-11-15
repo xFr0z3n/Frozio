@@ -25,6 +25,14 @@ void FZRNaviMusPlay(NSString *kind, NSString *identifier, void (^completion)(BOO
     callIntent(@"play:id:completion:", kind, identifier, completion);
 }
 
+void FZRNaviMusPerform(NSString *intent, void (^completion)(BOOL, NSString *)) {
+    Class bridge = NSClassFromString(@"FZNaviMus");
+    SEL sel = NSSelectorFromString(@"perform:completion:");
+    if (![bridge respondsToSelector:sel]) { completion(NO, @"Frozio's Swift bridge is missing"); return; }
+    FZLog("redesign: %@", intent);
+    ((void (*)(id, SEL, NSString *, id))objc_msgSend)(bridge, sel, intent, completion);
+}
+
 void FZRNaviMusOpen(NSString *kind, NSString *identifier, void (^completion)(BOOL, NSString *)) {
     callIntent(@"open:id:completion:", kind, identifier, completion);
 }

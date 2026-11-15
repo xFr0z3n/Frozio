@@ -4,7 +4,8 @@
 #pragma once
 #import <UIKit/UIKit.h>
 
-extern NSString *const FZRKeyBarCircles;    // "fz.redesign.bar.circles": glass circles behind bar buttons (on)
+extern NSString *const FZRKeyCircleOthers;  // "fz.redesign.circle.others": circles behind bar buttons other than back and ⋯ (on)
+// Back and ⋯ use FZRKeyCircleBack and FZRKeyCircleMore (FZRAlbumPage.h), here, on the album page and in the player.
 extern NSString *const FZRKeyBarWhite;      // "fz.redesign.bar.white": white bar buttons (on)
 extern NSString *const FZRKeyBarBareBack;   // "fz.redesign.bar.bareBack": back without the previous page's title (on)
 

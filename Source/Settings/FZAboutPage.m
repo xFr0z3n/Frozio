@@ -168,10 +168,14 @@ void FZImportSettings(void) {
 UIViewController *FZLicensesPage(void) {
     FZModRow *frozio = FZLinkRow(@"Frozio", @"GNU General Public License v3.0", [FZRepoURL stringByAppendingString:@"/blob/main/LICENSE"]);
     FZModRow *taurus = FZLinkRow(@"taurus", @"Settings kit and redesign kit · GPL-3.0", @"https://github.com/xFr0z3n/taurus");
+    FZModRow *kawarp = FZLinkRow(@"Kawarp", @"Fluid artwork · MIT · Copyright (c) 2026 Better Lyrics", @"https://github.com/better-lyrics/kawarp/blob/main/LICENSE");
     return [[FZModPage alloc] initWithTitle:@"Licenses" intro:@"Frozio's own license, and the code from others it includes." sections:@[
         FZSection(nil, @[frozio]),
         FZNotedSection(nil, @[taurus], @"Frozio's settings pages, glass and palette are adapted from taurus. "
                                        @"Each adapted file names its origin; see docs/LICENSES.md in the repo."),
+        FZNotedSection(nil, @[kawarp], @"The player's Fluid artwork is a port of Kawarp. Permission is granted free of charge to deal in it "
+                                       @"without restriction, provided the copyright notice and this permission notice are included. "
+                                       @"It is provided \"as is\", without warranty of any kind."),
     ] footer:nil];
 }
 

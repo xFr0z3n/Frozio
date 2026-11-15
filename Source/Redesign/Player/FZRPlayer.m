@@ -14,7 +14,10 @@
 #import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/Kit/FZRTokens.h"
 #import "Redesign/Kit/FZRField.h"
+#import "Redesign/Kit/FZRKawarp.h"
+#import "Redesign/FZRNaviMusControls.h"
 #import "Redesign/Kit/FZRRoundButton.h"
+#import "Redesign/Album/FZRAlbumPage.h"
 #import "Lyrics/FZNaviMusLyrics.h"
 #import "Settings/Kit/FZModPage.h"
 #import "Settings/Kit/FZKitCore.h"
@@ -271,7 +274,7 @@ static UIMenu *sleepMenu(void) {
 
 #pragma mark - the player
 
-NSString *const FZRKeyPlayerBackground = @"fz.redesign.player.background";   // 0 blurred cover, 1 colours, 2 fluid, 3 fill
+NSString *const FZRKeyPlayerBackground = @"fz.redesign.player.backdrop";     // 0 fluid artwork (Kawarp), 1 blurred cover, 2 colours, 3 cover
 NSString *const FZRKeyPlayerRightSlot = @"fz.redesign.player.rightSlot";     // right of next: 0 sleep timer, 1 repeat
 
 // Measured on chroma.pw's player (the user's screenshot, 390 × 844): ⌄ and ⋯ in 44 pt glass circles centred 71 pt
@@ -287,6 +290,7 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
 
 @implementation FZRPlayerViewController {
     FZRArtworkField *_field;
+    FZRKawarpView *_fluid;
     FZRRoundButton *_close, *_more;
     UILabel *_contextName;
     UIView *_plate;
@@ -336,12 +340,17 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     return label;
 }
 
+// chroma.pw's player: Fluid artwork (its Kawarp field) behind everything; the redesign's other fields as options.
 - (void)applyBackground {
     NSInteger kind = FZInt(FZRKeyPlayerBackground, 0);
-    _field.showsBackdrop = YES;   // the cover blurred behind everything, as chroma.pw's player
-    _field.flows = kind == 1;
-    _field.fluid = kind == 2;
+    BOOL fluid = kind == 0 && _fluid.available;
+    _fluid.hidden = !fluid;
+    _field.hidden = fluid;
+    _field.showsBackdrop = YES;
+    _field.flows = kind == 2;
+    _field.fluid = NO;
     _field.fills = kind == 3;
+    if (fluid) FZRApplyFluidLook(_fluid);
 }
 
 - (void)viewDidLoad {
@@ -352,8 +361,11 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     _field = [[FZRArtworkField alloc] initWithFrame:view.bounds];
     _field.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _field.bleed = UIEdgeInsetsMake(200, 0, 600, 0);
-    [self applyBackground];
     [view addSubview:_field];
+    _fluid = [[FZRKawarpView alloc] initWithFrame:view.bounds];
+    _fluid.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [view addSubview:_fluid];
+    [self applyBackground];
 
     _close = [self button:@"chevron.down" size:20 label:@"Close" action:@selector(closePlayer)];
     _close.circled = YES;
@@ -429,7 +441,7 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     coverTap.numberOfTapsRequired = 2;
     [_plate addGestureRecognizer:coverTap];
 
-    for (NSNotificationName name in @[FZNowPlayingDidChangeNotification, FZRSleepTimerDidChangeNotification, NSUserDefaultsDidChangeNotification]) {
+    for (NSNotificationName name in @[FZNowPlayingDidChangeNotification, FZRSleepTimerDidChangeNotification, NSUserDefaultsDidChangeNotification, FZRFluidLookDidChangeNotification]) {
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:name object:nil];
     }
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(routeChanged) name:AVAudioSessionRouteChangeNotification object:nil];
@@ -486,6 +498,7 @@ static BOOL externalRoute(void) {
                 _cover.image = image;
             }
             [_field setArtwork:image identity:song animated:animated];
+            [_fluid setImage:image animated:animated];
             _coverSong = song;
         }
         if (_lyricsOpen && ![_lyrics showSong:FZNowPlayingSongID()]) [self setLyricsOpen:NO];
@@ -519,6 +532,8 @@ static BOOL externalRoute(void) {
     _route.tintColor = externalRoute() ? FZRAccent() : FZRPrimary();
     _route.activeTintColor = FZRAccent();
     _more.menu = [self moreMenu];
+    _close.circled = FZEnabled(FZRKeyCircleBack);
+    _more.circled = FZEnabled(FZRKeyCircleMore);
 
     _download.hidden = !FZEnabled(FZRKeyPlayerDownload);
     _shuffle.hidden = !FZEnabled(FZRKeyPlayerShuffle);
@@ -734,32 +749,124 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     });
 }
 
-// Every feature of the player, those still to come shown greyed out (REDESIGN_PLAN.md R3).
+#pragma mark the ⋯ menu
+
+// NaviMus's own player does what Frozio's can't reach on its own (a song's playlist and queue): its menu item is
+// pressed out of sight, as for download.
+- (void)naviMusSongAction:(NSArray<NSString *> *)labels what:(NSString *)what dismissFirst:(BOOL)dismissFirst {
+    void (^run)(void) = ^{
+        FZRNaviMusPlayerAction(FZRPlayerTabs(), FZRPlayerMiniBar(), labels, ^(BOOL ok, NSString *why) {
+            FZLog("player: %@ → %d%@", what, ok, why ? [@" " stringByAppendingString:why] : @"");
+            if (ok) return;
+            UIViewController *top = FZRPlayerTabs().view.window.rootViewController;
+            while (top.presentedViewController) top = top.presentedViewController;
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Couldn't %@", what.lowercaseString]
+                                                                           message:why preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+            [top presentViewController:alert animated:YES completion:nil];
+        });
+    };
+    // NaviMus's playlist picker is a sheet it presents itself, which it can't while Frozio's player is up.
+    if (dismissFirst) [self dismissViewControllerAnimated:YES completion:run]; else run();
+}
+
+- (void)share {
+    NSDictionary *info = FZNowPlayingInfo();
+    NSString *title = string(info[MPMediaItemPropertyTitle]) ?: @"";
+    NSString *artist = string(info[MPMediaItemPropertyArtist]);
+    NSMutableArray *items = [NSMutableArray arrayWithObject:artist ? [NSString stringWithFormat:@"%@ – %@", title, artist] : title];
+    UIImage *cover = FZNowPlayingArtwork(CGSizeMake(600, 600));
+    if (cover) [items addObject:cover];
+    UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
+    sheet.popoverPresentationController.sourceView = _more;
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+- (void)love {
+    FZRNaviMusPerform(@"LikeSongIntent", ^(BOOL ok, NSString *why) {
+        FZLog("player: love → %d%@", ok, why ? [@" " stringByAppendingString:why] : @"");
+        if (ok) [[UINotificationFeedbackGenerator new] notificationOccurred:UINotificationFeedbackTypeSuccess];
+    });
+}
+
+static UIAction *comingAction(NSString *title, NSString *symbol, NSString *subtitle) {
+    UIAction *action = [UIAction actionWithTitle:title image:[UIImage systemImageNamed:symbol] identifier:nil handler:^(UIAction *a) {}];
+    action.subtitle = subtitle ?: @"Coming in a later Frozio build";
+    action.attributes = UIMenuElementAttributesDisabled;
+    return action;
+}
+
+// NaviMus's playback speed through its own rate handler, when it has one.
+- (UIMenuElement *)speedMenu {
+    MPRemoteCommand *rate = MPRemoteCommandCenter.sharedCommandCenter.changePlaybackRateCommand;
+    if (!FZRemoteHandles(rate)) return comingAction(@"Speed, pitch and reverb", @"slider.horizontal.3", @"NaviMus doesn't take speed from outside yet");
+    NSNumber *now = FZNowPlayingInfo()[MPNowPlayingInfoPropertyDefaultPlaybackRate] ?: @1;
+    NSMutableArray *rates = [NSMutableArray array];
+    for (NSNumber *value in @[@0.5, @0.75, @1, @1.25, @1.5, @2]) {
+        UIAction *action = [UIAction actionWithTitle:[NSString stringWithFormat:@"%g×", value.doubleValue] image:nil identifier:nil handler:^(UIAction *a) {
+            BOOL ok = FZRemoteSendWithOptions(rate, @{@"kMRMediaRemoteOptionPlaybackRate": value});
+            FZLog("player: speed %@ → %d", value, ok);
+        }];
+        action.state = fabs(now.doubleValue - value.doubleValue) < 0.01 ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [rates addObject:action];
+    }
+    UIMenu *menu = [UIMenu menuWithTitle:@"Speed, pitch and reverb" image:[UIImage systemImageNamed:@"slider.horizontal.3"] identifier:nil options:0 children:rates];
+    menu.subtitle = [NSString stringWithFormat:@"%g×", now.doubleValue];
+    return menu;
+}
+
+// chroma.pw's player menu, top to bottom (the user's screenshot): Add to playlist, Add to Queue and Share in a row;
+// Speed, pitch and reverb; AutoMix; Music Haptics; Artwork; Lyrics; Exclude track from your taste profile (here
+// NaviMus's Love, its counterpart); More. What Frozio can't do yet is there, greyed, until it lands.
 - (UIMenu *)moreMenu {
     __weak typeof(self) weakSelf = self;
-    NSMutableArray *now = [NSMutableArray array];
-    [now addObject:[UIAction actionWithTitle:@"Download" image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:nil
-                                     handler:^(UIAction *a) { [weakSelf download]; }]];
-    [now addObject:[UIAction actionWithTitle:@"Lyrics" image:[UIImage systemImageNamed:@"quote.bubble"] identifier:nil
-                                     handler:^(UIAction *a) { [weakSelf toggleLyrics]; }]];
-    [now addObject:sleepMenu()];
+    UIAction *playlist = [UIAction actionWithTitle:@"Add to playlist" image:[UIImage systemImageNamed:@"text.badge.plus"] identifier:nil handler:^(UIAction *a) {
+        [weakSelf naviMusSongAction:@[@"Add to Playlist", @"Add to playlist", @"Add to a Playlist"] what:@"Add to playlist" dismissFirst:YES];
+    }];
+    UIAction *queue = [UIAction actionWithTitle:@"Add to Queue" image:[UIImage systemImageNamed:@"text.line.last.and.arrowtriangle.forward"] identifier:nil handler:^(UIAction *a) {
+        [weakSelf naviMusSongAction:@[@"Add to Queue", @"Play Last", @"Queue"] what:@"Add to Queue" dismissFirst:NO];
+    }];
+    UIAction *share = [UIAction actionWithTitle:@"Share" image:[UIImage systemImageNamed:@"square.and.arrow.up"] identifier:nil handler:^(UIAction *a) { [weakSelf share]; }];
+    UIMenu *top = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[playlist, queue, share]];
+    if (@available(iOS 16.0, *)) top.preferredElementSize = UIMenuElementSizeMedium;
+
+    UIAction *noMix = [UIAction actionWithTitle:@"None" image:nil identifier:nil handler:^(UIAction *a) {}];
+    noMix.state = UIMenuElementStateOn;
+    UIMenu *automix = [UIMenu menuWithTitle:@"AutoMix" image:[UIImage systemImageNamed:@"arrow.triangle.merge"] identifier:nil options:0
+                                   children:@[noMix, comingAction(@"AutoMix", nil, nil), comingAction(@"Crossfade", nil, nil)]];
+    automix.subtitle = @"None";
+    UIAction *haptics = comingAction(@"Music Haptics", @"iphone.radiowaves.left.and.right", @"Needs iOS 18 and Apple Music's tracks");
+
+    UIAction *coverArt = [UIAction actionWithTitle:@"Cover Art" image:[UIImage systemImageNamed:@"photo"] identifier:nil handler:^(UIAction *a) {}];
+    coverArt.state = UIMenuElementStateOn;
+    UIMenu *visualizer = [UIMenu menuWithTitle:@"Visualizer" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[
+        comingAction(@"Shuffle Shaders", @"shuffle", nil), comingAction(@"Bars", nil, nil), comingAction(@"Nebula", nil, nil),
+        comingAction(@"Halo", nil, nil), comingAction(@"Poster", nil, nil), comingAction(@"Cut", nil, nil)]];
+    UIMenu *artwork = [UIMenu menuWithTitle:@"Artwork" image:[UIImage systemImageNamed:@"dot.circle.viewfinder"] identifier:nil options:0 children:@[
+        coverArt, comingAction(@"Animated", @"livephoto", nil), comingAction(@"Visualizer", @"waveform", nil), comingAction(@"Auto", @"wand.and.stars", nil),
+        visualizer]];
+    artwork.subtitle = @"Cover Art";
+
+    UIAction *lyricsDefault = [UIAction actionWithTitle:@"Default" image:nil identifier:nil handler:^(UIAction *a) { [weakSelf toggleLyrics]; }];
+    lyricsDefault.state = UIMenuElementStateOn;
+    UIMenu *lyrics = [UIMenu menuWithTitle:@"Lyrics" image:[UIImage systemImageNamed:@"quote.bubble"] identifier:nil options:0
+                                  children:@[lyricsDefault, comingAction(@"Lyrics shaders", nil, nil)]];
+    lyrics.subtitle = @"Default";
+    UIMenu *features = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline
+                                    children:@[[self speedMenu], automix, haptics, artwork, lyrics]];
+
+    UIAction *love = [UIAction actionWithTitle:@"Love" image:[UIImage systemImageNamed:@"heart"] identifier:nil handler:^(UIAction *a) { [weakSelf love]; }];
     NSArray *repeatNames = @[@"Repeat: Off", @"Repeat: All", @"Repeat: One"];
-    [now addObject:[UIAction actionWithTitle:repeatNames[(NSUInteger)_repeatMode] image:[UIImage systemImageNamed:_repeatMode == 2 ? @"repeat.1" : @"repeat"]
-                                  identifier:nil handler:^(UIAction *a) { [weakSelf cycleRepeat]; }]];
-    [now addObject:[UIAction actionWithTitle:@"Queue and more in NaviMus's player" image:[UIImage systemImageNamed:@"list.bullet"] identifier:nil
-                                     handler:^(UIAction *a) { [weakSelf openNaviMusPlayer]; }]];
-    NSMutableArray *coming = [NSMutableArray array];
-    for (NSArray *item in @[@[@"Speed and pitch", @"gauge.with.dots.needle.50percent"], @[@"Reverb", @"waveform"], @[@"AutoMix", @"arrow.triangle.merge"],
-                            @[@"Music Haptics", @"iphone.radiowaves.left.and.right"], @[@"Artwork modes", @"photo.on.rectangle"]]) {
-        UIAction *action = [UIAction actionWithTitle:item[0] image:[UIImage systemImageNamed:item[1]] identifier:nil handler:^(UIAction *a) {}];
-        action.subtitle = @"Coming in a later Frozio build";
-        action.attributes = UIMenuElementAttributesDisabled;
-        [coming addObject:action];
-    }
-    return [UIMenu menuWithTitle:@"" children:@[
-        [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:now],
-        [UIMenu menuWithTitle:@"Coming" image:[UIImage systemImageNamed:@"sparkles"] identifier:nil options:0 children:coming],
+    UIMenu *more = [UIMenu menuWithTitle:@"More" image:[UIImage systemImageNamed:@"ellipsis.circle"] identifier:nil options:0 children:@[
+        [UIAction actionWithTitle:@"Download" image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:nil handler:^(UIAction *a) { [weakSelf download]; }],
+        sleepMenu(),
+        [UIAction actionWithTitle:repeatNames[(NSUInteger)_repeatMode] image:[UIImage systemImageNamed:_repeatMode == 2 ? @"repeat.1" : @"repeat"]
+                       identifier:nil handler:^(UIAction *a) { [weakSelf cycleRepeat]; }],
+        [UIAction actionWithTitle:@"Queue and more in NaviMus's player" image:[UIImage systemImageNamed:@"list.bullet"] identifier:nil
+                          handler:^(UIAction *a) { [weakSelf openNaviMusPlayer]; }],
     ]];
+    UIMenu *last = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[love, more]];
+    return [UIMenu menuWithTitle:@"" children:@[top, features, last]];
 }
 
 #pragma mark swipe down to close
@@ -824,7 +931,9 @@ NSArray *FZRPlayerOptionSections(void) {
     FZModRow *miniSwipe = FZWithSymbol(FZSwitchRow(@"Swipe to change song", nil, @"fz.redesign.mini.swipe"), @"hand.draw");
 
     FZModRow *context = FZWithSymbol(FZSwitchRow(@"Album name at the top", nil, FZRKeyPlayerContext), @"text.alignleft");
-    FZModRow *background = FZWithSymbol(FZChoiceRow(@"Background", nil, FZRKeyPlayerBackground, @[@"Blurred cover", @"Colours", @"Fluid", @"Cover"], 0), @"photo");
+    FZModRow *background = FZWithSymbol(FZChoiceRow(@"Background", @"chroma.pw's is Fluid artwork.", FZRKeyPlayerBackground, @[@"Fluid artwork", @"Blurred cover", @"Colours", @"Cover"], 0), @"photo");
+    FZModRow *fluidLook = FZWithSymbol(FZPageRow(@"Fluid artwork", ^UIViewController *{ return FZRFluidOptionsPage(); }), @"drop");
+    fluidLook.subtitle = @"Preset, speed, warp, grain, blur, saturation, brightness.";
     FZModRow *slot = FZWithSymbol(FZChoiceRow(@"Right of next", @"chroma.pw has the sleep timer there.", FZRKeyPlayerRightSlot, @[@"Sleep timer", @"Repeat"], 0), @"timer");
     FZModRow *download = FZWithSymbol(FZSwitchRow(@"Download", @"In place of chroma.pw's +.", FZRKeyPlayerDownload), @"arrow.down.circle");
     FZModRow *shuffle = FZWithSymbol(FZSwitchRow(@"Shuffle", nil, FZRKeyPlayerShuffle), @"shuffle");
@@ -839,6 +948,6 @@ NSArray *FZRPlayerOptionSections(void) {
     return @[
         FZNotedSection(@"Rebuilt player", @[rebuilt], @"Applies right away."),
         FZSection(@"Mini player", @[miniPlay, miniPrevious, miniNext, miniAirPlay, miniDownload, miniProgress, miniRound, miniSwipe]),
-        FZSection(@"Player", @[background, slot, context, download, shuffle, repeat, times, airPlay, sleep, lyrics, queue, more, shrink]),
+        FZSection(@"Player", @[background, fluidLook, slot, context, download, shuffle, repeat, times, airPlay, sleep, lyrics, queue, more, shrink]),
     ];
 }

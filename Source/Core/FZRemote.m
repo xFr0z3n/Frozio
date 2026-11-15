@@ -81,6 +81,10 @@ MPRemoteCommandEvent *FZRemoteEvent(MPRemoteCommand *command, NSDictionary *opti
     return ((id (*)(Class, SEL, id, unsigned int, id))method_getImplementation(factory))(eventClass, make, command, mediaRemoteType, options ?: @{});
 }
 
+BOOL FZRemoteHandles(MPRemoteCommand *command) {
+    return command && [sHandlers objectForKey:command] != nil;
+}
+
 BOOL FZRemoteSend(MPRemoteCommand *command) {
     return FZRemoteSendWithOptions(command, nil);
 }
