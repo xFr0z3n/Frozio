@@ -16,7 +16,27 @@ static IMP fz_origPrepareForReuse, fz_origTablePrepareForReuse;
 // NaviMus's table lists (its UITableViewDiffableDataSources) host their rows with UIHostingConfiguration, which also
 // keeps a row's SwiftUI state for the next song: the configuration is cleared first, so NaviMus sets a fresh one.
 // SwiftUI's own list cells are left alone.
+// Each kind of reused cell once in the debug log (with its content configuration), to find the one behind the wrong
+// covers in NaviMus's lists.
+static void logCell(UIView *cell) {
+#ifdef FROZIO_DEBUG
+    static NSMutableSet *seen;
+    if (!seen) seen = [NSMutableSet set];
+    id configuration = [cell respondsToSelector:@selector(contentConfiguration)] ? [(id)cell contentConfiguration] : nil;
+    NSString *key = [NSString stringWithFormat:@"%@ / %@", NSStringFromClass(cell.class), configuration ? NSStringFromClass([configuration class]) : @"-"];
+    if ([seen containsObject:key]) return;
+    [seen addObject:key];
+    NSMutableArray *ivars = [NSMutableArray array];
+    unsigned count = 0;
+    Ivar *list = class_copyIvarList(cell.class, &count);
+    for (unsigned i = 0; i < count; i++) [ivars addObject:@(ivar_getName(list[i]))];
+    free(list);
+    FZLog("covers: reused %@ ivars %@ in %@", key, ivars, NSStringFromClass(cell.superview.class));
+#endif
+}
+
 static void clearHostingConfiguration(UIView *cell) {
+    logCell(cell);
     NSString *name = NSStringFromClass(cell.class);
     if ([name hasPrefix:@"SwiftUI."] || [name hasPrefix:@"_TtC7SwiftUI"] || [name hasPrefix:@"_TtGC7SwiftUI"]) return;
     id configuration = [cell respondsToSelector:@selector(contentConfiguration)] ? [(id)cell contentConfiguration] : nil;

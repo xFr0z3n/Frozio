@@ -302,7 +302,7 @@ UIViewController *FZMakeSettingsPage(void) {
 #endif
     NSMutableArray *sections = [NSMutableArray arrayWithArray:@[
         FZNotedSection(@"Appearance", appearance, @"Changes to NaviMus's tint apply after you restart the app."),
-        FZNotedSection(@"Lyrics", @[lockLyrics], @"Applies right away, from the next line."),
+        FZNotedSection(@"Lyrics", @[lockLyrics, FZWithSymbol(FZSwitchRow(@"Look up lyrics on LRCLIB", @"When NaviMus and your server have none. Sends the song's title, artist, album and length.", @"fz.lyrics.lrclib"), @"magnifyingglass")], @"Applies right away, from the next line."),
         FZSection(@"Playback", @[blocked]),
         FZNotedSection(@"Library", @[FZWithSymbol(FZSwitchRow(@"More sort options", @"Year (newest or oldest first) and Favourites for Albums.", FZKeyLibrarySorts), @"arrow.up.arrow.down"),
                                       FZWithSymbol(FZSwitchRow(@"Fix wrong covers in lists", @"NaviMus shows an earlier album's cover on a reused row.", @"fz.fix.coverReuse"), @"photo.on.rectangle")],

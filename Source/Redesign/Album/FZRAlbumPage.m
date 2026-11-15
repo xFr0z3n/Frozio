@@ -743,8 +743,22 @@ static NSString *string(id value) {
     [table deselectRowAtIndexPath:path animated:YES];
     NSString *songID = string(_songs[(NSUInteger)path.row][@"id"]);
     if (!songID.length) return;
+    // NaviMus's own row for that song, under the rebuilt page: NaviMus then plays the album from there, the songs after
+    // it queued (PlaySongIntent played the one song alone, device build 44).
+    NSString *title = string(_songs[(NSUInteger)path.row][@"title"]);
+    UITableViewCell *cell = [table cellForRowAtIndexPath:path];
+    CGPoint point = cell ? [cell convertPoint:CGPointMake(CGRectGetMidX(cell.bounds), CGRectGetMidY(cell.bounds)) toView:nil] : CGPointZero;
+    // On the next turn of the run loop, outside UIKit's delivery of the user's own touch (Frozio's tap shares it).
     __weak typeof(self) weakSelf = self;
-    FZRNaviMusPlay(@"Song", songID, ^(BOOL ok, NSString *why) { [weakSelf report:@"play the song" ok:ok why:why]; });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        typeof(self) page = weakSelf;
+        if (!page) return;
+        if (title && FZRTapNaviMusRow(page->_naviMusPage, title, point)) {
+            FZLog("redesign album: NaviMus's row \"%@\" tapped", title);
+            return;
+        }
+        FZRNaviMusPlay(@"Song", songID, ^(BOOL ok, NSString *why) { [weakSelf report:@"play the song" ok:ok why:why]; });
+    });
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scroll {

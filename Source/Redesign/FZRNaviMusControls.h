@@ -22,6 +22,11 @@ BOOL FZRActivateNaviMusControl(UIViewController *page, NSString *after, NSArray<
 /// what it opens is anchored where the user tapped.
 BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels, CGPoint alignTo);
 
+/// Taps the row of NaviMus's page whose title is `title` (a plain element, so it's tapped, not activated), its list
+/// first scrolled so the row is under `alignTo`. NaviMus then does what its own row does (an album's song plays with the
+/// rest of the album after it).
+BOOL FZRTapNaviMusRow(UIViewController *page, NSString *title, CGPoint alignTo);
+
 /// Runs the action titled one of `labels` from the menu of the control under `point` (window coordinates) without
 /// showing the menu: a UIButton's menu, or a context-menu interaction's. NO when there's none.
 BOOL FZRPerformMenuAction(UIWindow *window, CGPoint point, NSArray<NSString *> *labels);

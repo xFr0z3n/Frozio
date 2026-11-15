@@ -389,3 +389,15 @@ From the user's device test of build 43.
 - **Bar buttons on pages with a search field** sit 4 pt higher, clear of the field once the large title has collapsed.
 - **Search's account button flickering:** not reproduced in the harness (its button stayed in place through scrolling). The debug log now lists every page's bar buttons (class, label, frame, drawn views) once, to find what NaviMus's is.
 - **Not tested:** on device.
+
+## Album rows queue the album, lyrics always, queue covers at once, mini player artist, bar top (`fix/redesign-device-44`)
+
+From the user's device test of build 44.
+
+- **A song tapped on the album page played alone** (NaviMus's PlaySongIntent): no queue in Frozio's player or NaviMus's. Frozio now taps NaviMus's own row for that song on its page under the rebuilt one (its title, a plain element, scrolled under the finger, tapped rather than activated), on the next turn of the run loop; NaviMus plays the album from there with the rest queued. PlaySongIntent stays as the fallback. Harness: the stand-in's row was tapped and played the album from that song.
+- **Lyrics "No synced lyrics yet" for most songs:** Frozio fetches them itself (`Player/FZRLyricsFetch.m`): NaviMus's saved lyrics, then the user's server (OpenSubsonic `getLyricsBySongId`, synced structured lyrics), then LRCLIB (title, artist, album and length only; generic user agent; Frozio settings → Lyrics → "Look up lyrics on LRCLIB", on). Fetched as each song starts, so they open at once; kept for the session. When a song changes with the lyrics open, the new song's are fetched instead of closing them.
+- **Queue covers appeared after a music-note placeholder:** one session-wide cover cache; the playing song's artwork goes in at once under its cover ID, every queued cover loads in the background as each song starts (open or not), and a plain dark tile stands in until one arrives.
+- **Mini player:** title and artist are separate labels; the artist keeps up to 60 % of the line and the title truncates first, so the artist shows beside a long title.
+- **Top buttons cut off** (build 44 lifted them 4 pt on pages with a search field, past the bar's top): the lift now applies only once the large title has collapsed, and the views between a lifted button and the bar no longer clip it.
+- **Wrong covers in Library:** the reuse fix didn't run on device (no reused cell matched). The debug log now names each kind of reused cell, its content configuration and ivars once, to find the one NaviMus's lists use.
+- **Not tested:** on device.

@@ -22,6 +22,7 @@
 #import "Redesign/Kit/FZRRoundButton.h"
 #import "Redesign/Album/FZRAlbumPage.h"
 #import "Lyrics/FZNaviMusLyrics.h"
+#import "Redesign/Player/FZRLyricsFetch.h"
 #import "Settings/Kit/FZModPage.h"
 #import "Settings/Kit/FZKitCore.h"
 #import "Core/FZRemote.h"
@@ -239,7 +240,7 @@ static const CGFloat kBlurRoom = 12;
 - (BOOL)showSong:(NSString *)songID {
     if (songID && [songID isEqualToString:_song] && _lyrics) return YES;
     _song = [songID copy];
-    _lyrics = songID ? FZNaviMusSyncedLyrics(songID) : nil;
+    _lyrics = songID ? FZRKnownLyrics(songID) : nil;
     for (UIView *line in _lines) [line removeFromSuperview];
     [_lines removeAllObjects];
     _current = -1;
@@ -350,7 +351,30 @@ static void blurLine(UIView *holder, CGFloat radius, BOOL animated) {
 @interface FZRQueueView : UITableView <UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, readonly) NSCache<NSString *, UIImage *> *coverCache;
 - (void)reload;
+/// Loads every queued song's cover ahead, so the list shows them at once (called as the song changes).
++ (void)prefetch;
 @end
+
+// Covers for the queue, kept for the whole session: the playing song's own artwork goes in at once under its cover ID
+// (most of the queue is the same album), the rest load in the background as soon as the queue is known.
+static NSCache<NSString *, UIImage *> *queueCovers(void) {
+    static NSCache *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [NSCache new]; cache.countLimit = 300; });
+    return cache;
+}
+
+static UIImage *placeholderCover(void) {
+    static UIImage *image;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        image = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(44, 44)] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+            [[UIColor colorWithWhite:1 alpha:0.08] setFill];
+            UIRectFill(CGRectMake(0, 0, 44, 44));
+        }];
+    });
+    return image;
+}
 
 @implementation FZRQueueView {
     NSArray<NSDictionary *> *_sections;   // {title, songs}
@@ -369,11 +393,61 @@ static void blurLine(UIView *holder, CGFloat radius, BOOL animated) {
     self.cellLayoutMarginsFollowReadableWidth = NO;
     self.preservesSuperviewLayoutMargins = NO;
     if (@available(iOS 15.0, *)) self.sectionHeaderTopPadding = 0;
-    _covers = [NSCache new];
+    _covers = queueCovers();
     [self registerClass:UITableViewCell.class forCellReuseIdentifier:@"song"];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(coverLoaded:) name:@"fz.redesign.queueCoverLoaded" object:nil];
     return self;
 }
+// From the first song on, whether or not the player is open, so the covers are there when the queue is.
++ (void)load {
+    [NSNotificationCenter.defaultCenter addObserverForName:FZNowPlayingDidChangeNotification object:nil queue:NSOperationQueue.mainQueue
+                                                usingBlock:^(NSNotification *note) {
+        static NSString *lastSong;
+        NSString *song = FZNowPlayingSongID();
+        if (!song || [song isEqualToString:lastSong]) return;
+        lastSong = song;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [FZRQueueView prefetch]; });
+        // The lyrics too, so they're there at once when asked for.
+        FZRFetchLyrics(song, FZNowPlayingInfo(), ^(FZSyncedLyrics *lyrics) {});
+    }];
+}
+
++ (void)prefetch {
+    NSDictionary *queue = FZRNaviMusQueue();
+    if (!queue) return;
+    NSCache *cache = queueCovers();
+    NSString *current = string(queue[@"current"][@"coverArt"]);
+    UIImage *artwork = current && ![cache objectForKey:current] ? FZNowPlayingArtwork(CGSizeMake(132, 132)) : nil;
+    if (artwork) [cache setObject:artwork forKey:current];
+    if (!FZServerReady()) return;
+    static NSMutableSet *loading;
+    if (!loading) loading = [NSMutableSet set];
+    for (NSString *part in @[@"next", @"context", @"autoplay"]) {
+        for (NSDictionary *song in queue[part]) {
+            NSString *cover = string(song[@"coverArt"]);
+            if (!cover || [cache objectForKey:cover] || [loading containsObject:cover]) continue;
+            [loading addObject:cover];
+            FZServerImage(FZServerCoverURL(cover, 132), ^(UIImage *image) {
+                [loading removeObject:cover];
+                if (image) [cache setObject:image forKey:cover];
+                [NSNotificationCenter.defaultCenter postNotificationName:@"fz.redesign.queueCoverLoaded" object:cover];
+            });
+        }
+    }
+}
+
+- (void)coverLoaded:(NSNotification *)note {
+    NSString *cover = note.object;
+    NSMutableArray *paths = [NSMutableArray array];
+    for (NSIndexPath *path in self.indexPathsForVisibleRows) {
+        NSDictionary *song = _sections[(NSUInteger)path.section][@"songs"][(NSUInteger)path.row];
+        if ([string(song[@"coverArt"]) isEqualToString:cover]) [paths addObject:path];
+    }
+    if (paths.count) [self reloadRowsAtIndexPaths:paths withRowAnimation:UITableViewRowAnimationNone];
+}
+
 - (void)reload {
+    [FZRQueueView prefetch];
     NSDictionary *queue = FZRNaviMusQueue();
     NSMutableArray *sections = [NSMutableArray array];
     NSString *album = string(queue[@"current"][@"album"]);
@@ -426,8 +500,7 @@ static void blurLine(UIView *holder, CGFloat radius, BOOL animated) {
     content.imageToTextPadding = 12;
     NSString *cover = string(song[@"coverArt"]);
     UIImage *image = cover ? [_covers objectForKey:cover] : nil;
-    content.image = image ?: [UIImage systemImageNamed:@"music.note"];
-    content.imageProperties.tintColor = FZRTertiary();
+    content.image = image ?: placeholderCover();
     cell.contentConfiguration = content;
     cell.backgroundColor = UIColor.clearColor;
     cell.preservesSuperviewLayoutMargins = NO;
@@ -437,14 +510,7 @@ static void blurLine(UIView *holder, CGFloat radius, BOOL animated) {
     UIView *pressed = [UIView new];
     pressed.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     cell.selectedBackgroundView = pressed;
-    if (cover && !image && FZServerReady()) {
-        __weak typeof(self) weakSelf = self;
-        FZServerImage(FZServerCoverURL(cover, 132), ^(UIImage *loaded) {
-            if (!loaded || !weakSelf) return;
-            [weakSelf.coverCache setObject:loaded forKey:cover];
-            [weakSelf reloadRowsAtIndexPaths:@[path] withRowAnimation:UITableViewRowAnimationNone];
-        });
-    }
+    if (cover && !image) [FZRQueueView prefetch];
     return cell;
 }
 - (NSCache<NSString *, UIImage *> *)coverCache { return _covers; }
@@ -701,7 +767,15 @@ static BOOL externalRoute(void) {
             [_fluid setImage:image animated:animated];
             _coverSong = song;
         }
-        if (_lyricsOpen && ![_lyrics showSong:FZNowPlayingSongID()]) [self setLyricsOpen:NO];
+        if (_lyricsOpen && ![_lyrics showSong:FZNowPlayingSongID()]) {
+            NSString *next = FZNowPlayingSongID();
+            __weak typeof(self) weakSelf = self;
+            FZRFetchLyrics(next, FZNowPlayingInfo(), ^(FZSyncedLyrics *lyrics) {
+                typeof(self) strongSelf = weakSelf;
+                if (!strongSelf || ![next isEqualToString:FZNowPlayingSongID()]) return;
+                if (!lyrics || ![strongSelf->_lyrics showSong:next]) [strongSelf setLyricsOpen:NO];
+            });
+        }
     }
 
     BOOL playing = FZNowPlayingIsPlaying();
@@ -947,21 +1021,37 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     if (_lyricsOpen || _queueOpen) [self setLyricsOpen:NO queueOpen:NO];
 }
 
-- (void)queueChanged { if (_queueOpen) [_queueList reload]; }
+- (void)queueChanged {
+    if (_queueOpen) [_queueList reload]; else [FZRQueueView prefetch];
+}
 
 - (void)toggleLyrics {
     if (_lyricsOpen) { [self setLyricsOpen:NO]; return; }
-    if ([_lyrics showSong:FZNowPlayingSongID()]) {
+    NSString *song = FZNowPlayingSongID();
+    if ([_lyrics showSong:song]) {
         [self setLyricsOpen:YES];
         [_lyrics follow:FZNowPlayingElapsed()];
         return;
     }
-    // No synced lyrics saved for this song: NaviMus's own player has its lyrics (and fetches them).
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No synced lyrics yet"
-        message:@"NaviMus hasn't saved synced lyrics for this song. Open NaviMus's own player to load them?" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Open" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { [self openNaviMusPlayer]; }]];
-    [self presentViewController:alert animated:YES completion:nil];
+    // Not saved by NaviMus: asked from the server, then LRCLIB (FZRLyricsFetch); usually already fetched when the
+    // song started.
+    _lyricsButton.enabled = NO;
+    __weak typeof(self) weakSelf = self;
+    FZRFetchLyrics(song, FZNowPlayingInfo(), ^(FZSyncedLyrics *lyrics) {
+        typeof(self) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf->_lyricsButton.enabled = YES;
+        if (![song isEqualToString:FZNowPlayingSongID()]) return;
+        if (lyrics && [strongSelf->_lyrics showSong:song]) {
+            [strongSelf setLyricsOpen:YES];
+            [strongSelf->_lyrics follow:FZNowPlayingElapsed()];
+            return;
+        }
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No synced lyrics"
+            message:@"Neither NaviMus, your server nor LRCLIB has synced lyrics for this song." preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+        [strongSelf presentViewController:alert animated:YES completion:nil];
+    });
 }
 
 - (void)openNaviMusPlayer {

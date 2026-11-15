@@ -184,7 +184,7 @@ private struct HomeTab: View {
     }
 }
 
-private let standInSongs = ["Purpose General", "Face The Flame", "Lose Control", "Fourth Song", "Fifth Song",
+private let standInSongs = ["Purpose General", "Face The Flame", "Lose Control", "Onë Thing I Fear (Interlude) With A Long Title", "Fifth Song",
                             "Sixth Song", "Seventh Song", "Eighth Song"]
 
 // Named and shaped like NaviMus's album page root (Arpeggi.AlbumViewWrapper: album, albumID), so the
@@ -215,7 +215,12 @@ private struct AlbumViewWrapper: View {
             // NaviMus's rows: the title, its download ring ("circle.dotted"), then a ⋯ labelled "More".
             ForEach(Array(standInSongs.enumerated()), id: \.offset) { n, title in
                 HStack {
+                    // As NaviMus's row: a tap plays the album from that song, the rest queued.
                     Text(title)
+                        .onTapGesture {
+                            NSLog("[harness] NaviMus album row tapped: %@", title)
+                            StandInPlayer.shared.play("so-\(n + 1)")
+                        }
                     Spacer()
                     Image(systemName: "circle.dotted")
                     Menu {
