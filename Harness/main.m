@@ -17,6 +17,7 @@
 #import "Lyrics/FZLockScreenLyrics.h"
 #import "ArtistBlock/FZArtistBlock.h"
 #import "Core/FZRemote.h"
+#import "Redesign/Player/FZRPlayer.h"
 #import "Settings/FZSettingsEntry.h"
 #import "Redesign/FZRAppLook.h"
 #import "Diagnostics/FZScreenCensus.h"
@@ -117,6 +118,7 @@ static void startLyricsDemo(void) {
     if (FZRRedesignActive()) {
         FZInstallServer();
         FZRInstallPages();
+        FZRInstallPlayer();
     }
     FZRegisterPages();
     FZInstallSettingsEntry();      // finds the stand-in's "Settings" stack exactly as it finds NaviMus's
@@ -128,6 +130,14 @@ static void startLyricsDemo(void) {
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessShuffleProbe"]) {
         // Which MediaRemote option makes a shuffle event read "items" (MPShuffleTypeItems = 1).
         MPRemoteCommand *shuffle = MPRemoteCommandCenter.sharedCommandCenter.changeShuffleModeCommand;
+        MPRemoteCommand *repeatCommand = MPRemoteCommandCenter.sharedCommandCenter.changeRepeatModeCommand;
+        for (NSNumber *value in @[@0, @1, @2, @3]) {
+            MPChangeRepeatModeCommandEvent *e = (MPChangeRepeatModeCommandEvent *)FZRemoteEvent(repeatCommand, @{@"kMRMediaRemoteOptionRepeatMode": value});
+            NSLog(@"[harness] repeat probe %@ → type %ld", value, [e respondsToSelector:@selector(repeatType)] ? (long)e.repeatType : -1L);
+        }
+        MPChangePlaybackPositionCommandEvent *seek = (MPChangePlaybackPositionCommandEvent *)FZRemoteEvent(
+            MPRemoteCommandCenter.sharedCommandCenter.changePlaybackPositionCommand, @{@"kMRMediaRemoteOptionPlaybackPosition": @42.5});
+        NSLog(@"[harness] position probe → %@ %.1f", NSStringFromClass(seek.class), [seek respondsToSelector:@selector(positionTime)] ? seek.positionTime : -1.0);
         for (NSString *key in @[@"kMRMediaRemoteOptionShuffleMode", @"shuffleMode"]) {
             for (NSNumber *value in @[@0, @1, @2, @3]) {
                 MPChangeShuffleModeCommandEvent *e = (MPChangeShuffleModeCommandEvent *)FZRemoteEvent(shuffle, @{key: value});

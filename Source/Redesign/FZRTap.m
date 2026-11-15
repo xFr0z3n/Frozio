@@ -55,13 +55,26 @@ static void send(id object, NSString *selector, id argument) {
     ((void (*)(id, SEL, id))objc_msgSend)(object, NSSelectorFromString(selector), argument);
 }
 
+static BOOL tapView(UIWindow *window, CGPoint point, UIView *target);
+
 BOOL FZRTap(UIWindow *window, CGPoint point) {
+    return tapView(window, point, nil);
+}
+
+BOOL FZRTapIn(UIView *root, CGPoint point) {
+    UIWindow *window = root.window;
+    UIView *target = window ? [root hitTest:[root convertPoint:point fromView:window] withEvent:nil] : nil;
+    if (!target) { FZLogError("tap: nothing under %@ in %@", NSStringFromCGPoint(point), NSStringFromClass(root.class)); return NO; }
+    return tapView(window, point, target);
+}
+
+static BOOL tapView(UIWindow *window, CGPoint point, UIView *target) {
     if (!window || !loadIOKit()) {
         FZLogError("tap: %@", window ? @"IOKit's HID event functions aren't there; no tap sent" : @"no window");
         return NO;
     }
     UIApplication *app = UIApplication.sharedApplication;
-    UIView *view = [window hitTest:point withEvent:nil];
+    UIView *view = target ?: [window hitTest:point withEvent:nil];
     UITouch *touch = [UITouch new];
     NSArray *touchSelectors = @[@"setWindow:", @"setView:", @"setTapCount:", @"setPhase:", @"setTimestamp:",
                                 @"_setLocationInWindow:resetPrevious:", @"_setIsFirstTouchForView:", @"_setHidEvent:"];

@@ -10,3 +10,7 @@
 
 /// Taps `point` (window coordinates) in `window`. Synchronous: the touch has ended when it returns.
 BOOL FZRTap(UIWindow *window, CGPoint point);
+
+/// The same, aimed at what `root` has at `point` (window coordinates), whatever lies over it in the window (a
+/// view controller presented over the app).
+BOOL FZRTapIn(UIView *root, CGPoint point);
