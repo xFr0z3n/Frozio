@@ -18,6 +18,7 @@
 #import "ArtistBlock/FZArtistBlock.h"
 #import "Core/FZRemote.h"
 #import "Redesign/Player/FZRPlayer.h"
+#import "Redesign/FZRLibrarySorts.h"
 #import "Settings/FZSettingsEntry.h"
 #import "Redesign/FZRAppLook.h"
 #import "Diagnostics/FZScreenCensus.h"
@@ -125,6 +126,7 @@ static void startLyricsDemo(void) {
     FZInstallLockScreenLyrics();   // a pass-through system hook, safe outside NaviMus
     FZInstallRemote();
     FZInstallArtistBlock();
+    FZInstallLibrarySorts();
     FZInstallScreenCensus();       // debug census + Swift probe, as in a debug device build
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessLyricsDemo"]) startLyricsDemo();
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessShuffleProbe"]) {

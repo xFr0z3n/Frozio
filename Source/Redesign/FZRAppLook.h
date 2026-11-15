@@ -16,5 +16,10 @@
 /// YES when the redesigned look was on at launch.
 BOOL FZRRedesignActive(void);
 
+@class UITabBarAppearance;
+/// The redesign's tab bar appearance before iOS 26 (nil with the system's glass bars), for bars SwiftUI made
+/// transparent.
+UITabBarAppearance *FZRTabBarLook(void);
+
 /// Installs the look if FZSettingsKeyRedesign is on. Call before NaviMus's main().
 void FZRInstallAppLook(void);
