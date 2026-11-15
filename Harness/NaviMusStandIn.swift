@@ -34,19 +34,26 @@ private let albums: [Album] = (0..<14).map { i in
           hue: Double(i) / 14)
 }
 
+// -FZHarnessLegacyMini YES: NaviMus's iOS 17 shape on iOS 26 too, its mini player a band over each tab's
+// content (device probe, build 33: `_UIInheritedView` from 692 to the bottom) that grows into its player.
+private let legacyMini: Bool = {
+    if #available(iOS 26.0, *) { return UserDefaults.standard.bool(forKey: "FZHarnessLegacyMini") }
+    return true
+}()
+
 private struct StandInRoot: View {
     private let light = UserDefaults.standard.bool(forKey: "FZHarnessLight")
 
     var body: some View {
         let tabs = TabView {
-            HomeTab().tabItem { Label("Home", systemImage: "house") }
-            LibraryTab().tabItem { Label("Library", systemImage: "square.stack") }
-            SearchTab().tabItem { Label("Search", systemImage: "magnifyingglass") }
-            SettingsTab().tabItem { Label("Settings", systemImage: "gear") }
+            HomeTab().legacyBand().tabItem { Label("Home", systemImage: "house") }
+            LibraryTab().legacyBand().tabItem { Label("Library", systemImage: "square.stack") }
+            SearchTab().legacyBand().tabItem { Label("Search", systemImage: "magnifyingglass") }
+            SettingsTab().legacyBand().tabItem { Label("Settings", systemImage: "gear") }
         }
         .tint(naviMusTint)
         Group {
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, *), !legacyMini {
                 tabs.tabViewBottomAccessory { MiniPlayer() }
             } else {
                 tabs
@@ -296,6 +303,58 @@ private struct SettingsTab: View {
     }
 }
 
+private extension View {
+    @ViewBuilder func legacyBand() -> some View {
+        if legacyMini { overlay(alignment: .bottom) { LegacyBand() } } else { self }
+    }
+}
+
+// NaviMus's iOS 17 mini player and player in one overlay: tapping the mini player grows it into the player, whose
+// ⋯ menu has the song's Download (names guessed until the device log shows NaviMus's).
+private struct LegacyBand: View {
+    @ObservedObject private var model = StandInPlayer.shared.model
+    @State private var expanded = false
+    var body: some View {
+        if model.song != nil {
+            Group {
+                if expanded {
+                    VStack(spacing: 24) {
+                        HStack {
+                            Button { expanded = false } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }
+                                .accessibilityLabel("Close")
+                            Spacer()
+                            Menu {
+                                Button("Download") { NSLog("[harness] NaviMus player menu: Download song") }
+                                Button("Go to Album") {}
+                            } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                                .accessibilityLabel("More")
+                        }
+                        Cover(hue: 0.55, size: 280)
+                        Text(model.song ?? "").font(.title2.bold())
+                        Spacer()
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.regularMaterial)
+                } else {
+                    VStack(spacing: 0) {
+                        MiniPlayer()
+                            .frame(height: 64)
+                            .background(.regularMaterial)
+                            .contentShape(Rectangle())
+                            .onTapGesture { expanded = true }
+                        Color.clear.frame(height: 88)   // under the tab bar, as NaviMus's band
+                    }
+                }
+            }
+            .ignoresSafeArea(edges: .bottom)
+            .compositingGroup()
+            .geometryGroup()
+            .animation(.spring, value: expanded)
+        }
+    }
+}
+
 private struct MiniPlayer: View {
     var body: some View {
         HStack(spacing: 10) {
@@ -309,40 +368,109 @@ private struct MiniPlayer: View {
     }
 }
 
-// NaviMus's player as the system sees it: Now Playing info with the song ID, and a play/pause handler.
+// NaviMus's player as the system sees it: Now Playing info with the song ID, duration, elapsed time and artwork,
+// and its command handlers (play/pause, next, previous, position, shuffle, repeat).
+final class StandInModel: ObservableObject {
+    @Published var song: String?
+}
+
 @MainActor
 final class StandInPlayer {
     static let shared = StandInPlayer()
+    let model = StandInModel()
     private var song: String?
     private var playing = false
+    private var elapsed = 0.0
+    private var started = Date()
+    private let duration = 200.0
 
     private init() {
-        MPRemoteCommandCenter.shared().changeShuffleModeCommand.addTarget { event in
+        let center = MPRemoteCommandCenter.shared()
+        center.changeShuffleModeCommand.addTarget { event in
             guard let event = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
             MPRemoteCommandCenter.shared().changeShuffleModeCommand.currentShuffleType = event.shuffleType
             NSLog("[harness] NaviMus shuffle handler → type %ld", event.shuffleType.rawValue)
             return .success
         }
-        MPRemoteCommandCenter.shared().togglePlayPauseCommand.addTarget { [weak self] _ in
+        center.changeRepeatModeCommand.addTarget { event in
+            guard let event = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
+            NSLog("[harness] NaviMus repeat handler → type %ld", event.repeatType.rawValue)
+            return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self, let song = self.song else { return .noActionableNowPlayingItem }
-            self.playing.toggle()
+            self.setPlaying(!self.playing)
             self.publish(song)
             NSLog("[harness] toggle play/pause → %@", self.playing ? "playing" : "paused")
             return .success
         }
+        center.pauseCommand.addTarget { [weak self] _ in
+            guard let self, let song = self.song else { return .noActionableNowPlayingItem }
+            self.setPlaying(false)
+            self.publish(song)
+            NSLog("[harness] pause")
+            return .success
+        }
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            guard let self, let song = self.song else { return .noActionableNowPlayingItem }
+            let n = (Int(song.dropFirst(3)) ?? 1) % standInSongs.count + 1
+            NSLog("[harness] next track")
+            self.play("so-\(n)")
+            return .success
+        }
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            guard let self, let song = self.song else { return .noActionableNowPlayingItem }
+            let n = max(1, (Int(song.dropFirst(3)) ?? 1) - 1)
+            NSLog("[harness] previous track")
+            self.play("so-\(n)")
+            return .success
+        }
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self, let song = self.song, let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            self.elapsed = event.positionTime
+            self.started = Date()
+            self.publish(song)
+            NSLog("[harness] seek → %.1f", event.positionTime)
+            return .success
+        }
+    }
+
+    private func now() -> Double { playing ? min(duration, elapsed + Date().timeIntervalSince(started)) : elapsed }
+
+    private func setPlaying(_ on: Bool) {
+        elapsed = now()
+        started = Date()
+        playing = on
     }
 
     func play(_ id: String) {
         song = id
+        model.song = id
+        elapsed = 0
+        started = Date()
         playing = true
         publish(id)
     }
 
+    private func artwork(_ id: String) -> MPMediaItemArtwork {
+        let hue = CGFloat((Int(id.dropFirst(3)) ?? 1) % 7) / 7
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 300)).image { context in
+            let colors = [UIColor(hue: hue, saturation: 0.7, brightness: 0.85, alpha: 1).cgColor,
+                          UIColor(hue: hue + 0.12, saturation: 0.8, brightness: 0.35, alpha: 1).cgColor] as CFArray
+            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1])!
+            context.cgContext.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 300, y: 300), options: [])
+        }
+        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    }
+
     private func publish(_ id: String) {
+        let index = (Int(id.dropFirst(3)) ?? 1) - 1
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
-            MPMediaItemPropertyTitle: id, MPMediaItemPropertyArtist: "Harness Artist",
+            MPMediaItemPropertyTitle: standInSongs[max(0, min(standInSongs.count - 1, index))],
+            MPMediaItemPropertyArtist: "Harness Artist", MPMediaItemPropertyAlbumTitle: "Harness Album 1",
             MPNowPlayingInfoPropertyExternalContentIdentifier: id,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: 0.0, MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
+            MPMediaItemPropertyPlaybackDuration: duration, MPMediaItemPropertyArtwork: artwork(id),
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: now(), MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
         ]
     }
 }

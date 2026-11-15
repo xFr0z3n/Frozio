@@ -7,6 +7,8 @@
 #import "Redesign/Kit/FZRField.h"
 #import "Redesign/Kit/FZGlass.h"
 #import "Redesign/Kit/FZRGlass.h"
+#import "Redesign/Kit/FZRRoundButton.h"
+#import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/FZRNaviMusControls.h"
 #import "Redesign/FZRTap.h"
 #import "Settings/Kit/FZModPage.h"
@@ -32,73 +34,6 @@ static const CGFloat kHeroAspect = 1.21;
 static const CGFloat kHairline = 0.5;
 
 #pragma mark - pieces
-
-// A redesign button: a glyph, on a 44/48 pt glass circle when `circled` (FZRGlassInside's shape).
-@interface FZRRoundButton : UIControl
-- (instancetype)initWithSymbol:(NSString *)symbol pointSize:(CGFloat)size weight:(UIImageSymbolWeight)weight label:(NSString *)label;
-@property (nonatomic) BOOL circled;
-@property (nonatomic, readonly) UIImageView *glyph;
-@end
-
-@implementation FZRRoundButton {
-    UIView *_glass;
-    BOOL _hasGlass;
-}
-static char kRoundGlassKey;
-
-- (instancetype)initWithSymbol:(NSString *)symbol pointSize:(CGFloat)size weight:(UIImageSymbolWeight)weight label:(NSString *)label {
-    if (!(self = [super initWithFrame:CGRectZero])) return nil;
-    self.isAccessibilityElement = YES;
-    self.accessibilityLabel = label;
-    self.accessibilityTraits = UIAccessibilityTraitButton;
-    _glyph = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol
-        withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:size weight:weight]]];
-    _glyph.tintColor = FZRPrimary();
-    _glyph.contentMode = UIViewContentModeCenter;
-    [self addSubview:_glyph];
-    _circled = YES;
-    return self;
-}
-- (void)setCircled:(BOOL)circled {
-    _circled = circled;
-    _glass.hidden = !circled;
-    [self setNeedsLayout];
-}
-// The redesign's control glass, made the way taurus makes it (SGRGlassInside): iOS 26's Liquid Glass (interactive,
-// like the system's glass buttons), the thin dark material before it, a solid fill under Reduce Transparency.
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    CGFloat side = MIN(self.bounds.size.width, self.bounds.size.height);
-    if (_circled && side > 0) {
-        _glass = FZRGlassInside(self, &kRoundGlassKey, side);
-        _glass.hidden = NO;
-        if (!_hasGlass && [_glass isKindOfClass:UIVisualEffectView.class]) {
-            _hasGlass = YES;
-            UIVisualEffect *effect = ((UIVisualEffectView *)_glass).effect;
-            if ([effect respondsToSelector:NSSelectorFromString(@"setInteractive:")]) {
-                [effect setValue:@YES forKey:@"interactive"];
-                ((UIVisualEffectView *)_glass).effect = effect;
-            }
-            BOOL liquid = NO;
-            if (@available(iOS 26.0, *)) liquid = YES;
-            if (!liquid) {
-                // chroma.pw on iOS 17: a faint lighter ring around the material (measured (58, 47, 44) on (24, 10, 8)).
-                _glass.layer.borderWidth = 1;
-                _glass.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
-                _glass.layer.cornerRadius = side / 2;
-            }
-        }
-    } else if (_glass) {
-        _glass.hidden = YES;
-    }
-    _glyph.frame = self.bounds;
-    [self bringSubviewToFront:_glyph];
-}
-- (void)setHighlighted:(BOOL)highlighted {
-    [super setHighlighted:highlighted];
-    FZRAnimate(FZRMotionPress, ^{ self.glyph.alpha = highlighted ? 0.6 : 1; }, nil);
-}
-@end
 
 // SGRPlayCapsule: white, the glyph in a 44 pt box 4 pt in, the word 20 pt from the end, both in the field's
 // colour; Subheadline semibold up to Large.
@@ -799,8 +734,10 @@ UIViewController *FZRRedesignOptionsPage(void) {
     FZModRow *shuffle = FZWithSymbol(FZSwitchRow(@"Shuffle button", nil, FZRKeyAlbumShuffle), @"shuffle");
     FZModRow *download = FZWithSymbol(FZSwitchRow(@"Download button", @"In place of chroma.pw's +.", FZRKeyAlbumDownload), @"arrow.down.circle");
     FZModRow *meta = FZWithSymbol(FZSwitchRow(@"Genre, type and year", nil, FZRKeyAlbumMeta), @"text.alignleft");
-    return [[FZModPage alloc] initWithTitle:@"Redesigned pages" intro:nil sections:@[
+    NSMutableArray *sections = [NSMutableArray arrayWithArray:FZRPlayerOptionSections()];
+    [sections addObjectsFromArray:@[
         FZNotedSection(@"Buttons", @[circleBack, circleMore, circleActions], @"Off leaves only the icon."),
         FZNotedSection(@"Album", @[shuffle, download, meta], @"Changes show the next time a page opens."),
-    ] footer:nil];
+    ]];
+    return [[FZModPage alloc] initWithTitle:@"Redesigned pages" intro:nil sections:sections footer:nil];
 }

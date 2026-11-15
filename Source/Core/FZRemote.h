@@ -9,6 +9,7 @@
 // Public MediaPlayer API only, no NaviMus symbols.
 #pragma once
 #import <MediaPlayer/MediaPlayer.h>
+#import <UIKit/UIKit.h>
 
 /// Main thread, after NaviMus sets its Now Playing info.
 extern NSNotificationName const FZNowPlayingDidChangeNotification;
@@ -16,6 +17,12 @@ extern NSNotificationName const FZNowPlayingDidChangeNotification;
 NSDictionary *FZNowPlayingInfo(void);     // NaviMus's latest info, main thread; nil before any
 NSString *FZNowPlayingSongID(void);       // its ExternalContentIdentifier (NaviMus's song ID)
 BOOL FZNowPlayingIsPlaying(void);         // reported rate above 0
+NSTimeInterval FZNowPlayingElapsed(void); // seconds into the song now: the reported time, run on at the rate
+NSTimeInterval FZNowPlayingDuration(void);// seconds, 0 when unknown
+UIImage *FZNowPlayingArtwork(CGSize size);// the artwork NaviMus hands the system, nil without one
+
+/// Seeks with NaviMus's change-position handler, as the lock screen's scrubber does.
+BOOL FZRemoteSeek(NSTimeInterval seconds);
 
 /// Runs NaviMus's handler for `command` (e.g. MPRemoteCommandCenter.sharedCommandCenter.togglePlayPauseCommand).
 /// NO when NaviMus has no handler for it or the event can't be made.

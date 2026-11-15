@@ -11,6 +11,7 @@
 #import "Redesign/FZNaviMusTint.h"
 #import "Redesign/FZRAppLook.h"
 #import "Redesign/FZRNaviMusControls.h"
+#import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/Data/FZServer.h"
 #import "Lyrics/FZLockScreenLyrics.h"
 #import "ArtistBlock/FZArtistBlock.h"
@@ -30,6 +31,7 @@ __attribute__((constructor)) static void FrozioInit(void) {
         if (FZRRedesignActive()) {
             FZInstallServer();     // NaviMus's server and login, from its own requests
             FZRInstallPages();     // rebuilt pages laid over NaviMus's
+            FZRInstallPlayer();    // the rebuilt mini player and player over NaviMus's
         }
         // Frozio settings: always available (it's how every other toggle is reached).
         FZRegisterPages();

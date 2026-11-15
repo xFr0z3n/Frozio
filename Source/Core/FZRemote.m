@@ -1,4 +1,5 @@
 #import <objc/runtime.h>
+#import <QuartzCore/QuartzCore.h>
 #import "Core/FZRemote.h"
 #import "Core/FZHook.h"
 #import "Core/FZLog.h"
@@ -8,6 +9,7 @@ NSNotificationName const FZNowPlayingDidChangeNotification = @"FZNowPlayingDidCh
 static IMP fz_origAddTarget, fz_origSetInfo;
 static NSMapTable<MPRemoteCommand *, id> *sHandlers;   // main thread; the command's last NaviMus handler
 static NSDictionary *sInfo;                              // main thread
+static CFTimeInterval sInfoTime;                         // main thread; when sInfo arrived
 
 NSDictionary *FZNowPlayingInfo(void) { return sInfo; }
 
@@ -19,6 +21,35 @@ NSString *FZNowPlayingSongID(void) {
 BOOL FZNowPlayingIsPlaying(void) {
     NSNumber *rate = sInfo[MPNowPlayingInfoPropertyPlaybackRate];
     return sInfo && (!rate || rate.doubleValue > 0);
+}
+
+NSTimeInterval FZNowPlayingElapsed(void) {
+    NSNumber *elapsed = sInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime];
+    NSNumber *rate = sInfo[MPNowPlayingInfoPropertyPlaybackRate];
+    NSTimeInterval now = elapsed.doubleValue + (rate ? rate.doubleValue : 0) * MAX(0, CACurrentMediaTime() - sInfoTime);
+    NSTimeInterval duration = FZNowPlayingDuration();
+    return duration > 0 ? MIN(MAX(0, now), duration) : MAX(0, now);
+}
+
+NSTimeInterval FZNowPlayingDuration(void) {
+    NSNumber *duration = sInfo[MPMediaItemPropertyPlaybackDuration];
+    return [duration isKindOfClass:NSNumber.class] ? MAX(0, duration.doubleValue) : 0;
+}
+
+UIImage *FZNowPlayingArtwork(CGSize size) {
+    MPMediaItemArtwork *artwork = sInfo[MPMediaItemPropertyArtwork];
+    if (![artwork isKindOfClass:MPMediaItemArtwork.class]) return nil;
+    @try {
+        return [artwork imageWithSize:size];
+    } @catch (NSException *e) {
+        return nil;
+    }
+}
+
+BOOL FZRemoteSeek(NSTimeInterval seconds) {
+    // MediaRemote's own option for a position (as the lock screen's scrubber sends it).
+    return FZRemoteSendWithOptions(MPRemoteCommandCenter.sharedCommandCenter.changePlaybackPositionCommand,
+                                   @{@"kMRMediaRemoteOptionPlaybackPosition": @(MAX(0, seconds))});
 }
 
 static id fz_addTargetWithHandler(MPRemoteCommand *self, SEL _cmd, MPRemoteCommandHandlerStatus (^handler)(MPRemoteCommandEvent *)) {
@@ -71,6 +102,7 @@ static void fz_setNowPlayingInfo(id self, SEL _cmd, NSDictionary *info) {
     NSDictionary *copy = [info copy];
     dispatch_async(dispatch_get_main_queue(), ^{
         sInfo = copy;
+        sInfoTime = CACurrentMediaTime();
         [NSNotificationCenter.defaultCenter postNotificationName:FZNowPlayingDidChangeNotification object:nil];
     });
 }

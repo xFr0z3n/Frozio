@@ -102,7 +102,7 @@ static void withNaviMusShown(UIViewController *page, UIView *cover, void (^work)
     }
 }
 
-__attribute__((unused)) static NSString *describe(id element) {
+static NSString *describe(id element) {
     return [NSString stringWithFormat:@"\"%@\"%@ <%@>", [element accessibilityLabel],
             ([element accessibilityTraits] & UIAccessibilityTraitButton) ? @" button" : @"", NSStringFromClass([element class])];
 }
@@ -162,6 +162,17 @@ static NSArray *collectAll(UIViewController *page) {
     if (bar) collect(bar, 0, elements, seen);
     return elements;
 }
+
+NSArray *FZRAccessibilityElementsIn(UIView *root) {
+    NSMutableArray *elements = [NSMutableArray array];
+    if (!root) return elements;
+    collect(root, 0, elements, [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality]);
+    return elements;
+}
+
+NSString *FZRDescribeElement(id element) { return describe(element); }
+
+CGPoint FZRElementPoint(UIWindow *window, id element) { return activationPointIn(window, element); }
 
 BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSString *> *labels, CGPoint alignTo) {
     UIView *root = page.view;

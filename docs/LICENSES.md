@@ -51,6 +51,9 @@ Every borrowed file or block carries a header comment `// Adapted from <repo>/<p
 | `Source/Redesign/Kit/FZRFluid.h` | `taurus/tweak/Sources/Redesigned/Kit/SGRFluid.h` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
 | `Source/Redesign/Kit/FZRFluid.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRFluid.m` @ fe3211c (renamed SG→FZ) | GPL-3.0 |
 | `Source/Redesign/Kit/FZRAccent.m` | storage and picker from `taurus/tweak/Sources/Redesigned/Kit/SGRAccent.x` @ fe3211c (colour-swap hooks not ported) | GPL-3.0 |
+| `Source/Redesign/Kit/FZRRoundButton.h`, `.m` | `taurus/tweak/Sources/Redesigned/Kit/SGRActionRow.m`, `Kit/SGRGlass.m` @ fe3211c (moved out of the album page) | GPL-3.0 |
+| `Source/Redesign/Player/FZRMiniPlayer.m` | `taurus/tweak/Sources/Redesigned/NowPlayingBar/NowPlayingBar.x` @ fe3211c (card radius, glass, progress line values; rebuilt as Frozio's own bar) | GPL-3.0 |
+| `Source/Redesign/Player/FZRPlayer.m` | `taurus/tweak/Sources/Redesigned/Player/PlayerHeader.x`, `PlayerArtwork.x`, `PlayerControls.x`, `PlayerFooter.x`, `PlayerField.x`, `PlayerLyrics.x` @ fe3211c (layout values and structure; rebuilt as a standalone player for NaviMus) | GPL-3.0 |
 
 ## Build-time tools (not shipped)
 

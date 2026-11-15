@@ -32,6 +32,13 @@ void FZRPerformMenuActionUnseen(UIWindow *window, CGPoint point, NSArray<NSStrin
 /// Activates an item of the menu on screen whose label is one of `labels` (or starts with one and a space).
 BOOL FZRActivateMenuItem(NSArray<NSString *> *labels);
 
+/// Every labelled accessibility element under `root` (its accessibility tree and its subviews), hidden views left out.
+NSArray *FZRAccessibilityElementsIn(UIView *root);
+/// An element for the log: "label" button <class>.
+NSString *FZRDescribeElement(id element);
+/// Where an element is pressed, in `window`'s coordinates.
+CGPoint FZRElementPoint(UIWindow *window, id element);
+
 /// Hides NaviMus's navigation bar's drawing under a rebuilt page (and keeps it hidden through UIKit's and
 /// SwiftUI's own updates), or shows it again; alongside `transition` when there is one.
 void FZRSetNaviMusBarHidden(UIViewController *page, BOOL hidden, id<UIViewControllerTransitionCoordinator> transition);

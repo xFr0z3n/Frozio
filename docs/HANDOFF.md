@@ -36,7 +36,8 @@ Approach: Frozio **rebuilds** NaviMus's screens (strategy a), laid **over** Navi
   - Download: the Download item of NaviMus's **album ⋯ menu**, tapped open at the rebuilt ⋯'s position and pressed as soon as it shows (SwiftUI menus have no items until shown).
   - Song ⋯: a real tap (`FZRTap`) on that row's NaviMus "More" button, aligned under the finger. **Verified working on device (build 37).**
   - Top back and ⋯: NaviMus's bar is masked (invisible) but touchable, so taps reach its own buttons.
-- **Next phases:** R2 mini player plus R3 player together (NaviMus draws both in one SwiftUI overlay on iOS 17, a `SwiftUI._UIInheritedView` band over the tab bar). The user wants: a download button instead of "+", a customizable button set (play/pause, next, AirPlay, …), a progress line, and every player button hideable (sleep timer, AirPlay, …). Then the artist and playlist pages, Home (speed dial grid, Recents), Library (every sort in every category, e.g. albums by year), Search, and the ⋯ menu features.
+- **R2 + R3 mini player and player** (`Source/Redesign/Player/`): merged, awaiting the device test (FEATURES.md, "Redesign R2 + R3"). The player's download and close labels in NaviMus's own player are guesses until the debug log.
+- **Next phases (after R2/R3):** formerly R2 mini player plus R3 player together (NaviMus draws both in one SwiftUI overlay on iOS 17, a `SwiftUI._UIInheritedView` band over the tab bar). The user wants: a download button instead of "+", a customizable button set (play/pause, next, AirPlay, …), a progress line, and every player button hideable (sleep timer, AirPlay, …). Then the artist and playlist pages, Home (speed dial grid, Recents), Library (every sort in every category, e.g. albums by year), Search, and the ⋯ menu features.
 
 ## Key facts about NaviMus 1.6.1 (all in `FEATURES.md` / `REDESIGN_PLAN.md`)
 
