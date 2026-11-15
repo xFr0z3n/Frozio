@@ -10,7 +10,8 @@ import json
 import struct
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, quote, unquote
+import os
 
 ALBUMS = {
     "al-1": {
@@ -62,8 +63,32 @@ class Handler(BaseHTTPRequestHandler):
                                            "type": "harness", "openSubsonic": True}, **payload)}
         self.reply(json.dumps(body).encode())
 
+    # Animated covers (Harness/covers): a WebDAV folder (PROPFIND) that also answers GET with an HTML index.
+    COVERS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "covers")
+
+    def covers_list(self):
+        return sorted(f for f in os.listdir(self.COVERS) if f.lower().endswith(".mp4"))
+
+    def do_PROPFIND(self):
+        if not urlparse(self.path).path.startswith("/covers"):
+            self.send_response(405); self.end_headers(); return
+        hrefs = "".join("<d:response><d:href>/covers/%s</d:href></d:response>" % quote(name) for name in self.covers_list())
+        body = ('<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/covers/</d:href></d:response>%s</d:multistatus>' % hrefs).encode()
+        self.send_response(207)
+        self.send_header("Content-Type", "application/xml")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         url = urlparse(self.path)
+        if url.path.startswith("/covers"):
+            name = unquote(url.path[len("/covers/"):])
+            if not name:
+                links = "".join('<a href="%s">%s</a><br>' % (quote(n), n) for n in self.covers_list())
+                return self.reply(("<html><body>%s</body></html>" % links).encode(), "text/html")
+            with open(os.path.join(self.COVERS, os.path.basename(name)), "rb") as f:
+                return self.reply(f.read(), "video/mp4")
         query = {k: v[0] for k, v in parse_qs(url.query).items()}
         endpoint = url.path.rsplit("/", 1)[-1].replace(".view", "")
         if not (query.get("u") and query.get("t") and query.get("s")):

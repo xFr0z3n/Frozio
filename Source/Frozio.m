@@ -1,6 +1,7 @@
 // Frozio entry point. The constructor evaluates the version gate; every module installs itself
 // only when the gate passes, and each checks its own setting and preconditions.
 #import <Foundation/Foundation.h>
+#import "Redesign/Player/FZRAudioLevels.h"
 #import "Core/FZLog.h"
 #import "Core/FZVersionGate.h"
 #import "Prefs/FZSettings.h"
@@ -50,6 +51,7 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZInstallRemote();          // NaviMus's command handlers and Now Playing (after lyrics)
         FZInstallArtistBlock();
         FZInstallLibrarySorts();    // Year and Favourites in NaviMus's album sort menu (reads its switch live)
+        FZInstallAudioLevels();     // the music's levels for the visualizer and lyrics shaders
         FZInstallCoverReuseFix();   // NaviMus's grids keep a reused cell's old cover (reads its switch live)
     }
 }

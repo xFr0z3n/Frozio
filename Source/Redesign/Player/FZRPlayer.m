@@ -24,6 +24,8 @@
 #import "Redesign/Album/FZRAlbumPage.h"
 #import "Lyrics/FZNaviMusLyrics.h"
 #import "Redesign/Player/FZRLyricsFetch.h"
+#import "Redesign/Player/FZRAnimatedCovers.h"
+#import "Redesign/Kit/FZRVisualizer.h"
 #import "Settings/Kit/FZModPage.h"
 #import "Settings/Kit/FZKitCore.h"
 #import "Core/FZRemote.h"
@@ -40,6 +42,10 @@ NSString *const FZRKeyPlayerQueue = @"fz.redesign.player.queue";
 NSString *const FZRKeyPlayerMore = @"fz.redesign.player.more";
 NSString *const FZRKeyPlayerShrink = @"fz.redesign.player.shrink";
 NSString *const FZRKeyPlayerTimes = @"fz.redesign.player.times";
+// chroma.pw's Artwork: 0 Cover Art, 1 Animated, 2 Visualizer, 3 Auto (an animated cover when there is one).
+static NSString *const kArtworkKey = @"fz.redesign.player.artwork";
+static NSString *const kLyricsShadersKey = @"fz.redesign.lyrics.shaders";   // chroma.pw's Lyrics → Lyrics shaders (off)
+typedef NS_ENUM(NSInteger, FZRArtworkMode) { FZRArtworkCover = 0, FZRArtworkAnimated, FZRArtworkVisualizer, FZRArtworkAuto };
 
 static const CGFloat kSide = 24, kHeaderTop = 4, kCircle = 44, kSkipGlyph = 32, kSmallGlyph = 24;
 static const CGFloat kPausedScale = 0.84, kPausedScaleReduced = 0.92, kFooterMinBottom = 34;
@@ -546,6 +552,9 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
 
 @implementation FZRPlayerViewController {
     NSString *_importingFor;   // the song an .lrc file is being picked for
+    FZRAnimatedCoverView *_animated;
+    FZRVisualizerView *_visualizer, *_lyricsShader;
+    NSString *_animatedAlbum;   // "artist|album" the animated cover was asked for
     FZRArtworkField *_field;
     FZRKawarpView *_fluid;
     FZRRoundButton *_close, *_more;
@@ -623,6 +632,14 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     _fluid = [[FZRKawarpView alloc] initWithFrame:view.bounds];
     _fluid.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [view addSubview:_fluid];
+    // Lyrics shaders: a shader moving with the music behind the lines.
+    _lyricsShader = [[FZRVisualizerView alloc] initWithFrame:view.bounds];
+    _lyricsShader.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _lyricsShader.style = FZRVisualizerNebula;
+    _lyricsShader.intensity = 0.8;
+    _lyricsShader.alpha = 0;
+    _lyricsShader.hidden = YES;
+    [view addSubview:_lyricsShader];
     [self applyBackground];
 
     _close = [self button:@"chevron.down" size:20 label:@"Close" action:@selector(closePlayer)];
@@ -646,6 +663,17 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
     _cover.layer.cornerCurve = kCACornerCurveContinuous;
     _cover.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     [_plate addSubview:_cover];
+    _animated = [FZRAnimatedCoverView new];
+    _animated.layer.cornerRadius = FZRRadiusArtwork;
+    _animated.layer.cornerCurve = kCACornerCurveContinuous;
+    [_plate addSubview:_animated];
+    _visualizer = [FZRVisualizerView new];
+    _visualizer.clipsToBounds = YES;
+    _visualizer.layer.cornerRadius = FZRRadiusArtwork;
+    _visualizer.layer.cornerCurve = kCACornerCurveContinuous;
+    _visualizer.hidden = YES;
+    [_plate addSubview:_visualizer];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(animatedCoversChanged) name:FZRAnimatedCoversDidChangeNotification object:nil];
 
     _lyrics = [FZRLyricsView new];
     _lyrics.alpha = 0;
@@ -767,8 +795,11 @@ static BOOL externalRoute(void) {
             }
             [_field setArtwork:image identity:song animated:animated];
             [_fluid setImage:image animated:animated];
+            [_visualizer setImage:image];
+            [_lyricsShader setImage:image];
             _coverSong = song;
         }
+        [self updateArtwork];
         if (_lyricsOpen && ![_lyrics showSong:FZNowPlayingSongID()]) {
             NSString *next = FZNowPlayingSongID();
             __weak typeof(self) weakSelf = self;
@@ -924,8 +955,12 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     _plate.frame = cover;
     _plate.transform = transform;
     _cover.frame = _plate.bounds;
+    _animated.frame = _plate.bounds;
+    _visualizer.frame = _plate.bounds;
     CGFloat radius = (_lyricsOpen || _queueOpen) ? FZRRadiusThumb : FZRRadiusArtwork;
     _cover.layer.cornerRadius = radius;
+    _animated.layer.cornerRadius = radius;
+    _visualizer.layer.cornerRadius = radius;
     _plate.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:_plate.bounds cornerRadius:radius].CGPath;
     _lyrics.frame = content;
     _queueList.frame = content;
@@ -998,6 +1033,7 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
         [UIView transitionWithView:_title duration:0.2 options:UIViewAnimationOptionTransitionCrossDissolve animations:^{ self->_title.font = titleFont; } completion:nil];
     }
     [self showPaused:NO animated:YES];
+    [self updateLyricsShader];
     FZRAnimateLayout(self.view, ^{ [self.view setNeedsLayout]; }, nil);
     for (UIView *panel in @[_lyrics, _queueList]) {
         BOOL shown = (panel == _lyrics && lyrics) || (panel == _queueList && queue);
@@ -1113,6 +1149,120 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
         if (_lyricsOpen) [self setLyricsOpen:NO];
         [self toggleLyrics];
     }
+}
+
+#pragma mark artwork, visualizer, lyrics shaders
+
+- (FZRArtworkMode)artworkMode { return (FZRArtworkMode)FZInt(kArtworkKey, FZRArtworkAuto); }
+
+// The cover, an animated cover in its place when the album has one (Animated, Auto), or the visualizer.
+- (void)updateArtwork {
+    if (!self.isViewLoaded) return;
+    FZRArtworkMode mode = [self artworkMode];
+    BOOL visualizer = mode == FZRArtworkVisualizer && _visualizer.available;
+    _visualizer.style = (FZRVisualizerStyle)FZInt(FZRKeyVisualizerStyle, FZRVisualizerShuffle);
+    if (visualizer == _visualizer.hidden) {
+        _visualizer.alpha = visualizer ? 0 : 1;
+        _visualizer.hidden = NO;
+        [UIView animateWithDuration:0.35 animations:^{ self->_visualizer.alpha = visualizer ? 1 : 0; }
+                         completion:^(BOOL done) { if (!visualizer) self->_visualizer.hidden = YES; }];
+    }
+    if (visualizer || mode == FZRArtworkCover || !FZRAnimatedCoversConfigured()) {
+        _animatedAlbum = nil;
+        [_animated stop];
+        return;
+    }
+    NSDictionary *info = FZNowPlayingInfo();
+    NSString *album = string(info[MPMediaItemPropertyAlbumTitle]);
+    NSString *artist = string(info[MPMediaItemPropertyAlbumArtist]) ?: string(info[MPMediaItemPropertyArtist]);
+    NSString *key = [NSString stringWithFormat:@"%@|%@", artist ?: @"", album ?: @""];
+    if ([key isEqualToString:_animatedAlbum]) return;
+    _animatedAlbum = key;
+    if (!album.length) { [_animated stop]; return; }
+    __weak typeof(self) weakSelf = self;
+    FZRAnimatedCoverFor(artist, album, ^(NSURL *file) {
+        typeof(self) player = weakSelf;
+        if (!player || ![key isEqualToString:player->_animatedAlbum]) return;
+        if (file) [player->_animated playFile:file]; else [player->_animated stop];
+    });
+}
+
+- (void)animatedCoversChanged {
+    _animatedAlbum = nil;
+    [self updateArtwork];
+}
+
+- (void)setArtworkMode:(FZRArtworkMode)mode {
+    FZSetInt(kArtworkKey, mode);
+    _animatedAlbum = nil;
+    [self updateArtwork];
+}
+
+- (void)setVisualizerStyle:(FZRVisualizerStyle)style {
+    FZSetInt(FZRKeyVisualizerStyle, style);
+    FZSetInt(kArtworkKey, FZRArtworkVisualizer);
+    [self updateArtwork];
+}
+
+- (void)updateLyricsShader {
+    BOOL show = _lyricsOpen && FZHidden(kLyricsShadersKey) && _lyricsShader.available;
+    if (show == !_lyricsShader.hidden && (show ? _lyricsShader.alpha > 0.5 : YES)) return;
+    if (show) { _lyricsShader.hidden = NO; [self.view insertSubview:_lyricsShader aboveSubview:_fluid]; }
+    [UIView animateWithDuration:0.4 animations:^{ self->_lyricsShader.alpha = show ? 0.75 : 0; }
+                     completion:^(BOOL done) { if (!show && !self->_lyricsOpen) self->_lyricsShader.hidden = YES; }];
+}
+
+- (UIMenu *)artworkMenu {
+    __weak typeof(self) weakSelf = self;
+    FZRArtworkMode mode = [self artworkMode];
+    NSArray *names = @[@"Cover Art", @"Animated", @"Visualizer", @"Auto"];
+    NSArray *symbols = @[@"photo", @"livephoto", @"waveform", @"wand.and.stars"];
+    NSMutableArray *items = [NSMutableArray array];
+    for (NSInteger i = 0; i < 4; i++) {
+        UIAction *action = [UIAction actionWithTitle:names[i] image:[UIImage systemImageNamed:symbols[i]] identifier:nil
+                                             handler:^(UIAction *a) { [weakSelf setArtworkMode:(FZRArtworkMode)i]; }];
+        if (i == mode) action.state = UIMenuElementStateOn;
+        if (i == FZRArtworkAnimated || i == FZRArtworkAuto) {
+            action.subtitle = FZRAnimatedCoversConfigured() ? (i == FZRArtworkAuto ? @"Animated when the album has one" : @"From your covers folder")
+                                                            : @"Set a covers folder in Frozio settings";
+        }
+        [items addObject:action];
+    }
+    FZRVisualizerStyle style = (FZRVisualizerStyle)FZInt(FZRKeyVisualizerStyle, FZRVisualizerShuffle);
+    NSArray<NSString *> *styleNames = FZRVisualizerStyleNames();
+    NSMutableArray *styles = [NSMutableArray array];
+    for (NSInteger i = 0; i < (NSInteger)styleNames.count; i++) {
+        UIAction *action = [UIAction actionWithTitle:styleNames[i] image:i == FZRVisualizerShuffle ? [UIImage systemImageNamed:@"shuffle"] : nil
+                                          identifier:nil handler:^(UIAction *a) { [weakSelf setVisualizerStyle:(FZRVisualizerStyle)i]; }];
+        if (mode == FZRArtworkVisualizer && i == style) action.state = UIMenuElementStateOn;
+        [styles addObject:action];
+    }
+    // Shuffle Shaders first, as chroma.pw lists it.
+    [styles insertObject:styles.lastObject atIndex:0];
+    [styles removeLastObject];
+    [items addObject:[UIMenu menuWithTitle:@"Visualizer" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:styles]];
+    UIMenu *menu = [UIMenu menuWithTitle:@"Artwork" image:[UIImage systemImageNamed:@"dot.circle.viewfinder"] identifier:nil options:0 children:items];
+    menu.subtitle = mode == FZRArtworkVisualizer ? styleNames[(NSUInteger)style] : names[(NSUInteger)mode];
+    return menu;
+}
+
+- (UIMenu *)lyricsLookMenu {
+    __weak typeof(self) weakSelf = self;
+    BOOL shaders = FZHidden(kLyricsShadersKey);
+    UIAction *plain = [UIAction actionWithTitle:@"Default" image:nil identifier:nil handler:^(UIAction *a) {
+        FZSetEnabled(kLyricsShadersKey, NO);
+        [weakSelf updateLyricsShader];
+    }];
+    UIAction *shader = [UIAction actionWithTitle:@"Lyrics shaders" image:[UIImage systemImageNamed:@"sparkles"] identifier:nil handler:^(UIAction *a) {
+        FZSetEnabled(kLyricsShadersKey, YES);
+        typeof(self) player = weakSelf;
+        if (player && !player->_lyricsOpen) [player toggleLyrics]; else [player updateLyricsShader];
+    }];
+    shader.subtitle = @"Moves with the music behind the lines";
+    (shaders ? shader : plain).state = UIMenuElementStateOn;
+    UIMenu *menu = [UIMenu menuWithTitle:@"Lyrics" image:[UIImage systemImageNamed:@"quote.bubble"] identifier:nil options:0 children:@[plain, shader]];
+    menu.subtitle = shaders ? @"Lyrics shaders" : @"Default";
+    return menu;
 }
 
 - (void)openNaviMusPlayer {
@@ -1237,21 +1387,8 @@ static UIAction *comingAction(NSString *title, NSString *symbol, NSString *subti
     automix.subtitle = @"None";
     UIAction *haptics = comingAction(@"Music Haptics", @"iphone.radiowaves.left.and.right", @"Needs iOS 18 and Apple Music's tracks");
 
-    UIAction *coverArt = [UIAction actionWithTitle:@"Cover Art" image:[UIImage systemImageNamed:@"photo"] identifier:nil handler:^(UIAction *a) {}];
-    coverArt.state = UIMenuElementStateOn;
-    UIMenu *visualizer = [UIMenu menuWithTitle:@"Visualizer" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[
-        comingAction(@"Shuffle Shaders", @"shuffle", nil), comingAction(@"Bars", nil, nil), comingAction(@"Nebula", nil, nil),
-        comingAction(@"Halo", nil, nil), comingAction(@"Poster", nil, nil), comingAction(@"Cut", nil, nil)]];
-    UIMenu *artwork = [UIMenu menuWithTitle:@"Artwork" image:[UIImage systemImageNamed:@"dot.circle.viewfinder"] identifier:nil options:0 children:@[
-        coverArt, comingAction(@"Animated", @"livephoto", nil), comingAction(@"Visualizer", @"waveform", nil), comingAction(@"Auto", @"wand.and.stars", nil),
-        visualizer]];
-    artwork.subtitle = @"Cover Art";
-
-    UIAction *lyricsDefault = [UIAction actionWithTitle:@"Default" image:nil identifier:nil handler:^(UIAction *a) { [weakSelf toggleLyrics]; }];
-    lyricsDefault.state = UIMenuElementStateOn;
-    UIMenu *lyrics = [UIMenu menuWithTitle:@"Lyrics" image:[UIImage systemImageNamed:@"quote.bubble"] identifier:nil options:0
-                                  children:@[lyricsDefault, comingAction(@"Lyrics shaders", nil, nil)]];
-    lyrics.subtitle = @"Default";
+    UIMenu *artwork = [self artworkMenu];
+    UIMenu *lyrics = [self lyricsLookMenu];
     UIMenu *features = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline
                                     children:@[[self speedMenu], automix, haptics, artwork, lyrics, [self lyricsSourceMenu]]];
 

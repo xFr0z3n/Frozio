@@ -11,11 +11,13 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <MediaPlayer/MediaPlayer.h>
+#import "Redesign/Player/FZRAudioLevels.h"
 #import "Prefs/FZSettings.h"
 #import "Settings/FZSettingsPage.h"
 #import "Settings/Kit/FZPage.h"
 #import "Lyrics/FZLockScreenLyrics.h"
 #import "Redesign/Player/FZRLyricsFetch.h"
+#import "Redesign/Player/FZRAnimatedCovers.h"
 #import "ArtistBlock/FZArtistBlock.h"
 #import "Core/FZRemote.h"
 #import "Redesign/Player/FZRPlayer.h"
@@ -129,9 +131,47 @@ static void startLyricsDemo(void) {
     FZInstallRemote();
     FZInstallArtistBlock();
     FZInstallLibrarySorts();
+    FZInstallAudioLevels();     // the music's levels for the visualizer and lyrics shaders
     FZInstallCoverReuseFix();
     FZInstallScreenCensus();       // debug census + Swift probe, as in a debug device build
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessLyricsDemo"]) startLyricsDemo();
+    // -FZHarnessTapProbe YES: a quiet 220 Hz + 3 kHz tone through an AVQueuePlayer (as NaviMus plays), then what the
+    // audio levels tap read from it.
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessTapProbe"]) {
+        NSUInteger rate = 44100, frames = rate * 4;
+        NSMutableData *wav = [NSMutableData data];
+        uint32_t dataSize = (uint32_t)(frames * 2), riff = 36 + dataSize, fmtSize = 16, sampleRate = (uint32_t)rate, byteRate = sampleRate * 2;
+        uint16_t pcm = 1, channels = 1, align = 2, bits = 16;
+        [wav appendBytes:"RIFF" length:4]; [wav appendBytes:&riff length:4]; [wav appendBytes:"WAVEfmt " length:8];
+        [wav appendBytes:&fmtSize length:4]; [wav appendBytes:&pcm length:2]; [wav appendBytes:&channels length:2];
+        [wav appendBytes:&sampleRate length:4]; [wav appendBytes:&byteRate length:4]; [wav appendBytes:&align length:2]; [wav appendBytes:&bits length:2];
+        [wav appendBytes:"data" length:4]; [wav appendBytes:&dataSize length:4];
+        for (NSUInteger i = 0; i < frames; i++) {
+            double t = (double)i / rate;
+            int16_t v = (int16_t)(2000 * sin(2 * M_PI * 220 * t) + 600 * sin(2 * M_PI * 3000 * t));
+            [wav appendBytes:&v length:2];
+        }
+        NSURL *file = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"tap-probe.wav"]];
+        [wav writeToURL:file atomically:YES];
+        static AVQueuePlayer *probe;
+        probe = [AVQueuePlayer queuePlayerWithItems:@[]];
+        probe.volume = 0.05;
+        [probe insertItem:[AVPlayerItem playerItemWithURL:file] afterItem:nil];
+        [probe play];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            FZRAudioFrame f = FZRAudioLevelsNow();
+            NSMutableString *bands = [NSMutableString string];
+            for (int b = 0; b < FZR_BANDS; b++) [bands appendFormat:@"%.2f ", f.bands[b]];
+            NSLog(@"[harness] tap probe live=%d bass %.2f mid %.2f treble %.2f bands %@", FZRAudioLevelsLive(), f.bass, f.mid, f.treble, bands);
+        });
+    }
+    // -FZHarnessCoverMatch YES: how loosely animated covers match (FZRAnimatedCoverMatch).
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessCoverMatch"]) {
+        NSArray *files = @[@"Yeat - 2093.mp4", @"Yeat - ADL.mp4", @"Travis Scott - UTOPIA.mp4", @"Kanye West - Donda (Deluxe).mp4", @"Playboi Carti - MUSIC.mp4"];
+        NSArray *cases = @[@[@"Yeat", @"2093 (Unreleased)"], @[@"yeat", @"ADL"], @[@"Yeat, Drake", @"ADL"], @[@"Travis Scott", @"Utopia"],
+                           @[@"Kanye West", @"Donda"], @[@"Playboi Carti", @"MUSIC - SORRY 4 DA WAIT"], @[@"Yeat", @"Lyfë"], @[@"Drake", @"2093"]];
+        for (NSArray *c in cases) NSLog(@"[harness] cover match %@ / %@ → %@", c[0], c[1], FZRAnimatedCoverMatch(files, c[0], c[1]) ?: @"none");
+    }
     // -FZHarnessLyricsProbe "title|artist|album|seconds": asks each of taurus's sources on its own for that song.
     NSArray *probe = [[NSUserDefaults.standardUserDefaults stringForKey:@"FZHarnessLyricsProbe"] componentsSeparatedByString:@"|"];
     if (probe.count == 4) {

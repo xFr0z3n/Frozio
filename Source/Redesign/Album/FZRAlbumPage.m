@@ -2,6 +2,7 @@
 // SGRActionRow.m @ fe3211c (GPL-3.0). See FZRAlbumPage.h.
 #import <MediaPlayer/MediaPlayer.h>
 #import <objc/message.h>
+#import "Redesign/Player/FZRAnimatedCovers.h"
 #import "Redesign/Album/FZRAlbumPage.h"
 #import "Redesign/Data/FZServer.h"
 #import "Redesign/Kit/FZRTokens.h"
@@ -176,6 +177,7 @@ static const CGFloat kScrollBlur = 24;   // the cover's blur once half the hero 
 
 @interface FZRAlbumHeader : UIView
 @property (nonatomic, readonly) UIImageView *picture;
+@property (nonatomic, readonly) FZRAnimatedCoverView *motion;   // the album's animated cover over the picture, when found
 @property (nonatomic, readonly) UILabel *title, *artist, *meta;
 @property (nonatomic, readonly) FZRRoundButton *shuffle, *download;
 @property (nonatomic, readonly) FZRPlayCapsule *play;
@@ -202,6 +204,12 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     _picture.contentMode = UIViewContentModeScaleAspectFill;
     _picture.clipsToBounds = YES;
     [self addSubview:_picture];
+    // Under the scrim and the dissolve (the picture's own sublayers), so the video fades into the field as the cover does.
+    _motion = [[FZRAnimatedCoverView alloc] initWithFrame:_picture.bounds];
+    _motion.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [_picture insertSubview:_motion atIndex:0];
+    [_motion.layer removeFromSuperlayer];
+    [_picture.layer insertSublayer:_motion.layer atIndex:0];
     _scrim = [CAGradientLayer layer];
     _scrim.colors = @[(id)[UIColor colorWithWhite:0 alpha:kTopScrimAlpha].CGColor, (id)UIColor.clearColor.CGColor];
     [_picture.layer addSublayer:_scrim];
@@ -607,6 +615,13 @@ static NSString *string(id value) {
     NSArray *types = [album[@"releaseTypes"] isKindOfClass:NSArray.class] ? album[@"releaseTypes"] : nil;
     NSString *type = [types.firstObject isKindOfClass:NSString.class] && [types.firstObject length] ? [types.firstObject capitalizedString] : @"Album";
     [meta addObject:type];
+    // The album's animated cover, when the user's covers folder has one.
+    NSString *albumName = string(album[@"name"]), *albumArtist = string(album[@"artist"]) ?: string(album[@"displayArtist"]);
+    __weak typeof(self) weakPage = self;
+    FZRAnimatedCoverFor(albumArtist, albumName, ^(NSURL *file) {
+        typeof(self) page = weakPage;
+        if (page && file) [page->_header.motion playFile:file];
+    });
     NSString *year = string(album[@"year"]);
     if (year.length && ![year isEqualToString:@"0"]) [meta addObject:year];
     _header.meta.text = [meta componentsJoinedByString:@" · "];
@@ -867,6 +882,7 @@ UIViewController *FZRRedesignOptionsPage(void) {
     FZModRow *bareBack = FZWithSymbol(FZSwitchRow(@"Back without the page's name", nil, FZRKeyBarBareBack), @"chevron.left");
     NSMutableArray *sections = [NSMutableArray arrayWithObject:FZNotedSection(@"Bars", @[circleBack, circleMore, circleOthers, barWhite, bareBack], @"Every page, the album page and the player. Circles before iOS 26; iOS 26 draws its own glass.")];
     [sections addObjectsFromArray:FZRPlayerOptionSections()];
+    [sections addObject:FZRAnimatedCoversSection()];
     [sections addObjectsFromArray:@[
         FZNotedSection(@"Album", @[circleActions, shuffle, download, meta, playlistPage], @"Changes show the next time a page opens."),
     ]];
