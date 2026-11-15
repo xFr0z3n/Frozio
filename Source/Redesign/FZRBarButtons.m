@@ -141,7 +141,11 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
     BOOL white = FZEnabled(FZRKeyBarWhite);
     UINavigationItemBackButtonDisplayMode mode = FZEnabled(FZRKeyBarBareBack) ? UINavigationItemBackButtonDisplayModeMinimal
                                                                              : UINavigationItemBackButtonDisplayModeDefault;
-    if (bar.topItem && bar.topItem.backButtonDisplayMode != mode) bar.topItem.backButtonDisplayMode = mode;
+    // Set on the page and on the one before it (UIKit reads the back button's look from either, by iOS version):
+    // NaviMus's back showed the previous page's name in a capsule on device (build 45).
+    for (UINavigationItem *navItem in @[bar.topItem ?: NSNull.null, bar.backItem ?: NSNull.null]) {
+        if ([navItem isKindOfClass:UINavigationItem.class] && navItem.backButtonDisplayMode != mode) navItem.backButtonDisplayMode = mode;
+    }
 
     NSMutableArray<UIView *> *items = [NSMutableArray array];
     for (UIView *sub in bar.subviews) collectItems(sub, 0, items);
@@ -197,7 +201,17 @@ void FZRStyleBarButtons(UINavigationBar *bar) {
             UIView *item = group[i];
             FZRBarRole role = (FZRBarRole)roles[i].integerValue;
             BOOL circled = glass && circleFor(role);
-            CGFloat side = MAX(kCircle, item.bounds.size.width > 60 ? item.bounds.size.width + 12 : kCircle);
+            // Back is always a circle round its chevron; a word ("Edit") gets a capsule.
+            CGFloat side = role == FZRBarRoleBack ? kCircle : MAX(kCircle, item.bounds.size.width > 60 ? item.bounds.size.width + 12 : kCircle);
+            if (role == FZRBarRoleBack) {
+                BOOL bare = mode == UINavigationItemBackButtonDisplayModeMinimal;
+                NSMutableArray<UIView *> *walk = [NSMutableArray arrayWithArray:item.subviews];
+                while (walk.count) {
+                    UIView *v = walk.firstObject; [walk removeObjectAtIndex:0];
+                    if ([v isKindOfClass:UILabel.class] || [NSStringFromClass(v.class) containsString:@"ButtonLabel"]) { if (v.hidden != bare) v.hidden = bare; continue; }
+                    [walk addObjectsFromArray:v.subviews];
+                }
+            }
             UIView *shape = objc_getAssociatedObject(item, &kCircleKey);
             if (role == FZRBarRoleBack) {
                 // Back's circle goes inside the chevron's own view, behind the chevron: a circle beside it in the

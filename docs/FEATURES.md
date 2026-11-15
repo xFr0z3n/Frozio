@@ -401,3 +401,11 @@ From the user's device test of build 44.
 - **Top buttons cut off** (build 44 lifted them 4 pt on pages with a search field, past the bar's top): the lift now applies only once the large title has collapsed, and the views between a lifted button and the bar no longer clip it.
 - **Wrong covers in Library:** the reuse fix didn't run on device (no reused cell matched). The debug log now names each kind of reused cell, its content configuration and ivars once, to find the one NaviMus's lists use.
 - **Not tested:** on device.
+
+## NaviMus's wrong covers (in-place reconfigure), Library back button (`fix/redesign-device-45`)
+
+From the user's device test of build 45.
+
+- **Wrong covers in Library** (an album showing another album's cover, e.g. one from 2093): the build 45 debug log showed NaviMus's list cells are plain `UITableViewCell` / `UICollectionViewCell` / `UICollectionViewListCell` with `UIHostingConfiguration` (`UIKit._UICustomContentConfiguration` in ObjC). NaviMus re-sorts and reconfigures the visible cells in place, without reuse; SwiftUI keeps the old row's `@State` and so the old cover. Frozio now clears the cell's configuration first whenever a new SwiftUI configuration replaces one on a NaviMus cell, so the row starts fresh. Same setting (Library → Fix wrong covers in lists). Harness: re-sorting in place showed "album 39" with cover #0 before, #39 after; scrolling unaffected.
+- **Library's back button** was a wide capsule with the previous page's name ("Library"): the bare chevron is now set on the page before as well, the back button's title is hidden while circled, and back is always a 44 pt circle. Harness: a bare circle at the top and when scrolled.
+- **Not tested:** on device.
