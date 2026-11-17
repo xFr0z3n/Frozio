@@ -625,6 +625,61 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
 @interface FZRPlayerViewController : UIViewController <UIScrollViewDelegate, UIGestureRecognizerDelegate>
 @end
 
+// The covers folder's videos, to pick one for an album by hand.
+@interface FZRCoverPicker : UITableViewController <UISearchResultsUpdating>
+@property (nonatomic, copy) void (^picked)(NSString *name);
+- (instancetype)initWithNames:(NSArray<NSString *> *)names chosen:(NSString *)chosen album:(NSString *)album;
+@end
+
+@implementation FZRCoverPicker {
+    NSArray<NSString *> *_names, *_shown;
+    NSString *_chosen;
+}
+- (instancetype)initWithNames:(NSArray<NSString *> *)names chosen:(NSString *)chosen album:(NSString *)album {
+    if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
+    _names = names ?: @[];
+    _chosen = chosen;
+    self.title = album;
+    // The album's name as the first search, so its likely videos are at the top.
+    NSString *first = [album componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"([-"]].firstObject;
+    NSString *word = [first stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    UISearchController *search = [[UISearchController alloc] initWithSearchResultsController:nil];
+    search.searchResultsUpdater = self;
+    search.obscuresBackgroundDuringPresentation = NO;
+    search.searchBar.text = word;
+    self.navigationItem.searchController = search;
+    self.navigationItem.hidesSearchBarWhenScrolling = NO;
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(close)];
+    [self filter:word];
+    return self;
+}
+- (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
+- (void)filter:(NSString *)text {
+    NSString *needle = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    _shown = needle.length ? [_names filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF CONTAINS[cd] %@", needle]] : _names;
+    if (needle.length && !_shown.count) _shown = _names;
+    [self.tableView reloadData];
+}
+- (void)updateSearchResultsForSearchController:(UISearchController *)search { [self filter:search.searchBar.text]; }
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section { return (NSInteger)_shown.count; }
+- (NSString *)tableView:(UITableView *)table titleForFooterInSection:(NSInteger)section {
+    return _names.count ? @"Kept for this album for good. ⋯ → Artwork → This album → Match automatically again undoes it." : @"No videos in the covers folder.";
+}
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell = [table dequeueReusableCellWithIdentifier:@"name"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"name"];
+    NSString *name = _shown[(NSUInteger)path.row];
+    cell.textLabel.text = name.stringByDeletingPathExtension;
+    cell.textLabel.numberOfLines = 2;
+    cell.accessoryType = [name isEqualToString:_chosen] ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    return cell;
+}
+- (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
+    NSString *name = _shown[(NSUInteger)path.row];
+    if (self.picked) self.picked(name);
+    [self close];
+}
+@end
+
 @implementation FZRPlayerViewController {
     NSString *_importingFor;   // the song an .lrc file is being picked for
     FZRAnimatedCoverView *_animated, *_animatedBackdrop;
@@ -783,6 +838,9 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
 
     _title = [self label:UIFontTextStyleTitle1 weight:UIFontWeightBold color:FZRPrimary()];
     _artist = [self label:UIFontTextStyleBody weight:UIFontWeightRegular color:FZRSecondary()];
+    _artist.userInteractionEnabled = YES;
+    _artist.accessibilityTraits = UIAccessibilityTraitButton;
+    [_artist addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openArtist)]];
     // The explicit badge: a small rounded "E" in the secondary white before the artist.
     _explicitBadge = [self label:UIFontTextStyleCaption2 weight:UIFontWeightBold color:UIColor.blackColor];
     _explicitBadge.text = @"E";
@@ -891,6 +949,7 @@ static BOOL externalRoute(void) {
             [_visualizer setImage:image];
             [_lyricsShader setImage:image];
             _coverSong = song;
+            [self prefetchAnimatedCovers];
         }
         [self updateArtwork];
         if (_lyricsOpen && ![_lyrics showSong:FZNowPlayingSongID()]) {
@@ -1291,7 +1350,10 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
 // Full screen (the default): the video behind the whole player and the still cover's window gone while the cover
 // shows; the lyrics and queue keep the thumbnail. In the window: the video in place of the still cover.
 - (void)showAnimatedFile:(NSURL *)file {
-    BOOL full = file && FZEnabled(kAnimatedFullScreenKey);
+    NSString *album = string(FZNowPlayingInfo()[MPMediaItemPropertyAlbumTitle]);
+    FZRAnimatedCoverMode albumMode = FZRAnimatedCoverModeFor(album);
+    BOOL fullWanted = albumMode == FZRAnimatedCoverFull || (albumMode != FZRAnimatedCoverWindow && FZEnabled(kAnimatedFullScreenKey));
+    BOOL full = file && fullWanted;
     if (file && !full) [_animated playFile:file]; else [_animated stop];
     if (full) [_animatedBackdrop playFile:file]; else [_animatedBackdrop stop];
     _backdropShowing = full;
@@ -1357,25 +1419,34 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
         }
         [items addObject:action];
     }
-    BOOL fullScreen = FZEnabled(kAnimatedFullScreenKey);
-    UIAction *full = [UIAction actionWithTitle:@"Full screen" image:[UIImage systemImageNamed:@"arrow.up.left.and.arrow.down.right"] identifier:nil
-                                       handler:^(UIAction *a) { [weakSelf setAnimatedFullScreen:YES]; }];
-    UIAction *window = [UIAction actionWithTitle:@"In the cover window" image:[UIImage systemImageNamed:@"square"] identifier:nil
-                                         handler:^(UIAction *a) { [weakSelf setAnimatedFullScreen:NO]; }];
-    (fullScreen ? full : window).state = UIMenuElementStateOn;
-    NSMutableArray *animatedItems = [NSMutableArray arrayWithObjects:full, window, nil];
+    // This album's own choice, kept for good: full screen, in the cover's window or its still cover; and which video.
     NSString *album = string(FZNowPlayingInfo()[MPMediaItemPropertyAlbumTitle]);
     if (album.length && FZRAnimatedCoversConfigured()) {
-        BOOL off = FZRAnimatedCoverOff(album);
-        if (off || _animated.file || _backdropShowing) {
-            UIAction *still = [UIAction actionWithTitle:off ? @"Animate this album again" : @"Still cover for this album"
-                                                  image:[UIImage systemImageNamed:off ? @"livephoto" : @"livephoto.slash"] identifier:nil
-                                                handler:^(UIAction *a) { FZRSetAnimatedCoverOff(album, !off); }];
-            still.subtitle = album;
-            [animatedItems addObject:still];
+        FZRAnimatedCoverMode albumMode = FZRAnimatedCoverModeFor(album);
+        BOOL globalFull = FZEnabled(kAnimatedFullScreenKey);
+        NSArray *titles = @[globalFull ? @"Full screen (default)" : @"In the cover window (default)", @"Full screen", @"In the cover window", @"Still cover"];
+        NSArray *symbols = @[@"circle.dashed", @"arrow.up.left.and.arrow.down.right", @"square", @"photo"];
+        NSMutableArray *albumItems = [NSMutableArray array];
+        for (NSInteger i = 0; i < 4; i++) {
+            UIAction *choice = [UIAction actionWithTitle:titles[i] image:[UIImage systemImageNamed:symbols[i]] identifier:nil handler:^(UIAction *a) {
+                FZRSetAnimatedCoverMode(album, (FZRAnimatedCoverMode)i);
+            }];
+            if (i == albumMode) choice.state = UIMenuElementStateOn;
+            [albumItems addObject:choice];
         }
+        NSString *chosen = FZRAnimatedCoverChosenFile(album);
+        UIAction *pick = [UIAction actionWithTitle:@"Choose the video…" image:[UIImage systemImageNamed:@"film.stack"] identifier:nil
+                                           handler:^(UIAction *a) { [weakSelf chooseAnimatedCover]; }];
+        pick.subtitle = chosen ?: @"Matched automatically";
+        [albumItems addObject:pick];
+        if (chosen) {
+            [albumItems addObject:[UIAction actionWithTitle:@"Match automatically again" image:[UIImage systemImageNamed:@"wand.and.stars"] identifier:nil
+                                                    handler:^(UIAction *a) { FZRSetAnimatedCoverChosenFile(album, nil); }]];
+        }
+        UIMenu *albumMenu = [UIMenu menuWithTitle:@"This album" image:[UIImage systemImageNamed:@"square.stack"] identifier:nil options:0 children:albumItems];
+        albumMenu.subtitle = albumMode == FZRAnimatedCoverDefault ? album : [NSString stringWithFormat:@"%@ · %@", titles[(NSUInteger)albumMode], album];
+        [items addObject:[UIMenu menuWithTitle:@"Animated cover" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[albumMenu]]];
     }
-    [items addObject:[UIMenu menuWithTitle:@"Animated covers" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:animatedItems]];
     FZRVisualizerStyle style = (FZRVisualizerStyle)FZInt(FZRKeyVisualizerStyle, FZRVisualizerShuffle);
     NSArray<NSString *> *styleNames = FZRVisualizerStyleNames();
     NSMutableArray *styles = [NSMutableArray array];
@@ -1414,6 +1485,105 @@ static void centre(UIView *view, CGFloat x, CGFloat y, CGFloat side) {
     [_lyrics restyle];
     if (_lyricsOpen) { [_lyrics follow:FZNowPlayingElapsed()]; [self updateLyricsShader]; }
     else [self toggleLyrics];
+}
+
+// Any video from the covers folder for this album, kept for good (when the automatic match picked the wrong one).
+- (void)chooseAnimatedCover {
+    NSString *album = string(FZNowPlayingInfo()[MPMediaItemPropertyAlbumTitle]);
+    if (!album.length) return;
+    __weak typeof(self) weakSelf = self;
+    FZRAnimatedCoverFileNames(^(NSArray<NSString *> *names) {
+        typeof(self) player = weakSelf;
+        if (!player) return;
+        FZRCoverPicker *picker = [[FZRCoverPicker alloc] initWithNames:names chosen:FZRAnimatedCoverChosenFile(album) album:album];
+        picker.picked = ^(NSString *name) { FZRSetAnimatedCoverChosenFile(album, name); };
+        UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:picker];
+        nav.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        [player presentViewController:nav animated:YES completion:nil];
+    });
+}
+
+// The playing song's ids from NaviMus's queue (its album and artist).
+static NSDictionary *currentSong(void) {
+    id song = FZRNaviMusQueue()[@"current"];
+    return [song isKindOfClass:NSDictionary.class] ? song : nil;
+}
+
+// The artist's name opens their page, as in NaviMus's player.
+- (void)openArtist {
+    NSString *artistID = string(currentSong()[@"artistId"]);
+    if (!artistID.length) { [self naviMusSongAction:@[@"Go to Artist"] what:@"Go to Artist" dismissFirst:YES]; return; }
+    [self dismissViewControllerAnimated:YES completion:^{
+        FZRNaviMusOpen(@"Artist", artistID, ^(BOOL ok, NSString *why) { FZLog("player: open artist → %d %@", ok, why ?: @""); });
+    }];
+}
+
+- (void)openAlbum {
+    NSString *albumID = string(currentSong()[@"albumId"]);
+    if (!albumID.length) { [self naviMusSongAction:@[@"Go to Album"] what:@"Go to Album" dismissFirst:YES]; return; }
+    [self dismissViewControllerAnimated:YES completion:^{
+        FZRNaviMusOpen(@"Album", albumID, ^(BOOL ok, NSString *why) { FZLog("player: open album → %d %@", ok, why ?: @""); });
+    }];
+}
+
+// NaviMus's own player menu, 1:1 (the user's screenshot): each item is NaviMus's, performed from its own menu.
+- (UIMenu *)naviMusMoreMenu {
+    __weak typeof(self) weakSelf = self;
+    // title, symbol, presents something (Frozio's player steps aside first)
+    NSArray<NSArray *> *items = @[
+        @[@"Quick Settings", @"gearshape", @YES],
+        @[@"Playback Speed", @"gauge.with.dots.needle.67percent", @YES],
+        @[@"Sleep Timer", @"moon.zzz", @YES],
+        @[@"Clear Play Queue", @"eraser.fill", @YES],
+        @[@"Add to Playlist", @"music.note.list", @YES],
+        @[@"Start Radio", @"dot.radiowaves.left.and.right", @NO],
+        @[@"Rate", @"star.leadinghalf.filled", @YES],
+        @[@"Go to Album", @"square.stack", @YES],
+        @[@"Go to Artist", @"music.mic", @YES],
+        @[@"Share", @"square.and.arrow.up", @YES],
+        @[@"Song Info", @"info.circle.fill", @YES],
+    ];
+    NSMutableArray *actions = [NSMutableArray array];
+    for (NSArray *item in items) {
+        NSString *title = item[0];
+        UIImage *image = FZRNaviMusMenuIcon(title) ?: [UIImage systemImageNamed:item[1]];
+        BOOL presents = [item[2] boolValue];
+        UIAction *action = [UIAction actionWithTitle:title image:image identifier:nil handler:^(UIAction *a) {
+            typeof(self) player = weakSelf;
+            if ([title isEqualToString:@"Go to Album"]) { [player openAlbum]; return; }
+            if ([title isEqualToString:@"Go to Artist"]) { [player openArtist]; return; }
+            [player naviMusSongAction:@[title] what:title dismissFirst:presents];
+        }];
+        [actions addObject:action];
+    }
+    // As NaviMus groups them: settings, playback, the song.
+    UIMenu *first = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[actions[0]]];
+    UIMenu *second = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:[actions subarrayWithRange:NSMakeRange(1, 1)]];
+    UIMenu *third = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:[actions subarrayWithRange:NSMakeRange(2, 1)]];
+    UIMenu *fourth = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:[actions subarrayWithRange:NSMakeRange(3, 1)]];
+    UIMenu *fifth = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:[actions subarrayWithRange:NSMakeRange(4, 1)]];
+    UIMenu *sixth = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:[actions subarrayWithRange:NSMakeRange(5, 1)]];
+    UIMenu *song = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:[actions subarrayWithRange:NSMakeRange(6, 3)]];
+    UIMenu *share = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:[actions subarrayWithRange:NSMakeRange(9, 1)]];
+    UIMenu *info = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:[actions subarrayWithRange:NSMakeRange(10, 1)]];
+    return [UIMenu menuWithTitle:@"More" image:[UIImage systemImageNamed:@"ellipsis.circle"] identifier:nil options:0
+                        children:@[first, second, third, fourth, fifth, sixth, song, share, info]];
+}
+
+// The next albums' animated covers, ready before their songs start.
+- (void)prefetchAnimatedCovers {
+    if (!FZRAnimatedCoversConfigured()) return;
+    NSDictionary *queue = FZRNaviMusQueue();
+    NSMutableSet *albums = [NSMutableSet set];
+    for (NSString *part in @[@"next", @"context", @"autoplay"]) {
+        for (NSDictionary *song in [queue[part] isKindOfClass:NSArray.class] ? queue[part] : @[]) {
+            NSString *album = string(song[@"album"]);
+            if (!album.length || [albums containsObject:album]) continue;
+            [albums addObject:album];
+            FZRAnimatedCoverPrefetch(string(song[@"artist"]), album);
+            if (albums.count >= 2) return;
+        }
+    }
 }
 
 - (void)openNaviMusPlayer {
@@ -1544,15 +1714,7 @@ static UIAction *comingAction(NSString *title, NSString *symbol, NSString *subti
                                     children:@[[self speedMenu], automix, haptics, artwork, lyrics, [self lyricsSourceMenu]]];
 
     UIAction *love = [UIAction actionWithTitle:@"Love" image:[UIImage systemImageNamed:@"heart"] identifier:nil handler:^(UIAction *a) { [weakSelf love]; }];
-    NSArray *repeatNames = @[@"Repeat: Off", @"Repeat: All", @"Repeat: One"];
-    UIMenu *more = [UIMenu menuWithTitle:@"More" image:[UIImage systemImageNamed:@"ellipsis.circle"] identifier:nil options:0 children:@[
-        [UIAction actionWithTitle:@"Download" image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:nil handler:^(UIAction *a) { [weakSelf download]; }],
-        sleepMenu(),
-        [UIAction actionWithTitle:repeatNames[(NSUInteger)_repeatMode] image:[UIImage systemImageNamed:_repeatMode == 2 ? @"repeat.1" : @"repeat"]
-                       identifier:nil handler:^(UIAction *a) { [weakSelf cycleRepeat]; }],
-        [UIAction actionWithTitle:@"Queue and more in NaviMus's player" image:[UIImage systemImageNamed:@"list.bullet"] identifier:nil
-                          handler:^(UIAction *a) { [weakSelf openNaviMusPlayer]; }],
-    ]];
+    UIMenu *more = [self naviMusMoreMenu];
     UIMenu *last = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[love, more]];
     return [UIMenu menuWithTitle:@"" children:@[top, features, last]];
 }

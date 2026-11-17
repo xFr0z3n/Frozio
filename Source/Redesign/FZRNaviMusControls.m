@@ -5,9 +5,11 @@
 #import "Redesign/Album/FZRAlbumPage.h"
 #import "Redesign/FZRTap.h"
 #import "Redesign/FZRBarButtons.h"
+#import "Redesign/Player/FZRPlayer.h"
 #import "Settings/Kit/FZKitCore.h"
 #import "Core/FZHook.h"
 #import "Core/FZLog.h"
+#import "Prefs/FZSettings.h"
 
 #pragma mark - intents (FZNaviMus.swift)
 
@@ -213,6 +215,29 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
         id element = found.firstObject;
         if (!element) return;
         CGPoint point = activationPointIn(window, element);
+        if (sRowTap) {
+            // A row: tapped where it is. Only when it's out of sight is the list scrolled, and only within its own
+            // range: a list pushed past its end swallowed the next touch, so songs often didn't start (build 51).
+            UIScrollView *list = scrollViewOf(root, [root convertPoint:point fromView:window]);
+            CGRect visible = list ? [list convertRect:list.bounds toView:window] : window.bounds;
+            visible = CGRectIntersection(CGRectInset(visible, 0, 60), window.bounds);
+            if (list && !CGRectContainsPoint(visible, point)) {
+                CGFloat maxY = MAX(-list.adjustedContentInset.top, list.contentSize.height + list.adjustedContentInset.bottom - list.bounds.size.height);
+                CGFloat y = MIN(maxY, MAX(-list.adjustedContentInset.top, list.contentOffset.y + (point.y - CGRectGetMidY(visible))));
+                [list setContentOffset:CGPointMake(list.contentOffset.x, y) animated:NO];
+                [list layoutIfNeeded];
+                NSArray *again = candidates(collectAll(page), after, labels);
+                if (again.firstObject) element = again.firstObject;
+                point = activationPointIn(window, element);
+            }
+            if (!CGRectContainsPoint(window.bounds, point)) {
+                FZLogError("redesign: NaviMus row %@ is off screen at %@", describe(element), NSStringFromCGPoint(point));
+                return;
+            }
+            done = FZRTapHeld(window, point, 0.08);
+            FZLog("redesign: NaviMus row %@ tapped=%d at %@", describe(element), done, NSStringFromCGPoint(point));
+            return;
+        }
         if (!CGPointEqualToPoint(alignTo, CGPointZero) && fabs(point.y - alignTo.y) > 1) {
             // Under the finger: NaviMus's list scrolls so its control is where the rebuilt page's was tapped, so
             // the menu NaviMus opens is anchored there.
@@ -286,11 +311,36 @@ static NSArray<UIMenuElement *> *resolved(UIMenuElement *element) {
     return elements;
 }
 
+// NaviMus's own menu icons by title, learned whenever one of its menus is read, so Frozio's copy of a menu shows
+// exactly its symbols (kept as SF Symbol names: "symbol(system: gearshape)" in an image's description).
+static NSString *const kMenuIconsKey = @"fz.navimus.menuIcons";
+
+static void noteIcon(UIMenuElement *element) {
+    NSString *title = element.title;
+    NSString *description = element.image.description;
+    if (!title.length || !description.length) return;
+    NSRegularExpression *symbol = [NSRegularExpression regularExpressionWithPattern:@"symbol\\(system: ([^)]+)\\)" options:0 error:nil];
+    NSTextCheckingResult *match = [symbol firstMatchInString:description options:0 range:NSMakeRange(0, description.length)];
+    if (!match) return;
+    NSString *name = [description substringWithRange:[match rangeAtIndex:1]];
+    NSDictionary *known = [[FZSettings defaults] dictionaryForKey:kMenuIconsKey];
+    if ([known[title] isEqualToString:name]) return;
+    NSMutableDictionary *icons = [known mutableCopy] ?: [NSMutableDictionary dictionary];
+    icons[title] = name;
+    [[FZSettings defaults] setObject:icons forKey:kMenuIconsKey];
+}
+
+UIImage *FZRNaviMusMenuIcon(NSString *title) {
+    NSString *name = [[FZSettings defaults] dictionaryForKey:kMenuIconsKey][title];
+    return name ? [UIImage systemImageNamed:name] : nil;
+}
+
 static UIAction *actionIn(UIMenu *menu, NSArray<NSString *> *labels, NSMutableArray<NSString *> *titles) {
     NSMutableArray<UIMenuElement *> *children = [NSMutableArray array];
     for (UIMenuElement *child in menu.children) [children addObjectsFromArray:resolved(child)];
     if (!children.count) FZLog("redesign: menu %@ has %lu children (%@)", menu.title, (unsigned long)menu.children.count,
                                [[menu.children valueForKey:@"class"] componentsJoinedByString:@","]);
+    for (UIMenuElement *element in children) if ([element isKindOfClass:UIAction.class]) noteIcon(element);
     for (UIMenuElement *element in children) {
         if ([element isKindOfClass:UIMenu.class]) {
             UIAction *inner = actionIn((UIMenu *)element, labels, titles);
@@ -628,13 +678,6 @@ static void cover(UIViewController *vc) {
     [vc.view addSubview:page.view];
     [page didMoveToParentViewController:vc];
     FZLog("redesign: %@ laid over NaviMus's page", NSStringFromClass(page.class));
-#ifdef FROZIO_DEBUG
-    // The labels of NaviMus's own controls on the page, to wire the rebuilt page's buttons to them.
-    __weak UIViewController *weakVC = vc;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (weakVC) FZRActivateNaviMusControl(weakVC, nil, @[@"\u2063frozio-probe-no-such-control"]);
-    });
-#endif
 }
 
 static void fz_pushViewController(UINavigationController *self, SEL _cmd, UIViewController *vc, BOOL animated) {
@@ -654,6 +697,8 @@ static void fz_setViewControllers(UINavigationController *self, SEL _cmd, NSArra
         FZLogError("redesign: covering a page threw %@; NaviMus's page stays", e.name);
     }
     ((void (*)(id, SEL, id, BOOL))fz_origSetControllers)(self, _cmd, controllers, animated);
+    // Leaving a page, NaviMus can draw its old mini player afresh: hidden again right away (device, build 51).
+    FZRRecheckNaviMusMini();
 }
 
 // SwiftUI adds its own views to the hosting view as the page builds; the rebuilt page stays on top.

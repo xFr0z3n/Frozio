@@ -68,7 +68,23 @@ BOOL FZRTapIn(UIView *root, CGPoint point) {
     return tapView(window, point, target);
 }
 
-static BOOL tapView(UIWindow *window, CGPoint point, UIView *target) {
+// One phase of a touch, sent through UIApplication as a real one is.
+static void sendPhase(UIApplication *app, UIEvent *event, UITouch *touch, CGPoint screenPoint, NSInteger phase) {
+    BOOL touching = phase == UITouchPhaseBegan;
+    IOHIDEventRef hid = hidEvent(screenPoint, touching);
+    ((void (*)(id, SEL, NSInteger))objc_msgSend)(touch, NSSelectorFromString(@"setPhase:"), phase);
+    ((void (*)(id, SEL, NSTimeInterval))objc_msgSend)(touch, NSSelectorFromString(@"setTimestamp:"), NSProcessInfo.processInfo.systemUptime);
+    ((void (*)(id, SEL, IOHIDEventRef))objc_msgSend)(touch, NSSelectorFromString(@"_setHidEvent:"), hid);
+    ((void (*)(id, SEL))objc_msgSend)(event, NSSelectorFromString(@"_clearTouches"));
+    ((void (*)(id, SEL, IOHIDEventRef))objc_msgSend)(event, NSSelectorFromString(@"_setHIDEvent:"), hid);
+    ((void (*)(id, SEL, id, BOOL))objc_msgSend)(event, NSSelectorFromString(@"_addTouch:forDelayedDelivery:"), touch, NO);
+    [app sendEvent:event];
+    CFRelease(hid);
+}
+
+// `hold` > 0 lifts the finger that long after it went down, on a later turn of the run loop, as a person's tap
+// does: SwiftUI's tap gestures let an instant one go by now and then (rows not starting, device build 51).
+static BOOL tapViewHeld(UIWindow *window, CGPoint point, UIView *target, NSTimeInterval hold) {
     if (!window || !loadIOKit()) {
         FZLogError("tap: %@", window ? @"IOKit's HID event functions aren't there; no tap sent" : @"no window");
         return NO;
@@ -92,18 +108,23 @@ static BOOL tapView(UIWindow *window, CGPoint point, UIView *target) {
     ((void (*)(id, SEL, CGPoint, BOOL))objc_msgSend)(touch, NSSelectorFromString(@"_setLocationInWindow:resetPrevious:"), point, YES);
     ((void (*)(id, SEL, BOOL))objc_msgSend)(touch, NSSelectorFromString(@"_setIsFirstTouchForView:"), YES);
 
-    for (NSInteger phase = UITouchPhaseBegan; phase <= UITouchPhaseEnded; phase += UITouchPhaseEnded - UITouchPhaseBegan) {
-        BOOL touching = phase == UITouchPhaseBegan;
-        IOHIDEventRef hid = hidEvent(screenPoint, touching);
-        ((void (*)(id, SEL, NSInteger))objc_msgSend)(touch, NSSelectorFromString(@"setPhase:"), phase);
-        ((void (*)(id, SEL, NSTimeInterval))objc_msgSend)(touch, NSSelectorFromString(@"setTimestamp:"), NSProcessInfo.processInfo.systemUptime);
-        ((void (*)(id, SEL, IOHIDEventRef))objc_msgSend)(touch, NSSelectorFromString(@"_setHidEvent:"), hid);
-        ((void (*)(id, SEL))objc_msgSend)(event, NSSelectorFromString(@"_clearTouches"));
-        ((void (*)(id, SEL, IOHIDEventRef))objc_msgSend)(event, NSSelectorFromString(@"_setHIDEvent:"), hid);
-        ((void (*)(id, SEL, id, BOOL))objc_msgSend)(event, NSSelectorFromString(@"_addTouch:forDelayedDelivery:"), touch, NO);
-        [app sendEvent:event];
-        CFRelease(hid);
+    sendPhase(app, event, touch, screenPoint, UITouchPhaseBegan);
+    if (hold <= 0) {
+        sendPhase(app, event, touch, screenPoint, UITouchPhaseEnded);
+    } else {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(hold * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIEvent *later = ((UIEvent *(*)(id, SEL))objc_msgSend)(app, NSSelectorFromString(@"_touchesEvent"));
+            sendPhase(app, later, touch, screenPoint, UITouchPhaseEnded);
+        });
     }
-    FZLog("tap: sent at %@ to %@", NSStringFromCGPoint(point), NSStringFromClass(view.class));
+    FZLog("tap: sent at %@ to %@%@", NSStringFromCGPoint(point), NSStringFromClass(view.class), hold > 0 ? @" (held)" : @"");
     return YES;
+}
+
+static BOOL tapView(UIWindow *window, CGPoint point, UIView *target) {
+    return tapViewHeld(window, point, target, 0);
+}
+
+BOOL FZRTapHeld(UIWindow *window, CGPoint point, NSTimeInterval hold) {
+    return tapViewHeld(window, point, nil, hold);
 }

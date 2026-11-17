@@ -431,11 +431,27 @@ void FZRInstallPlayer(void) {
     // A song starting or the switch flipping lays the bar out again.
     for (NSNotificationName name in @[FZNowPlayingDidChangeNotification, NSUserDefaultsDidChangeNotification]) {
         [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
-            UITabBarController *tabs = sTabs;
-            if (tabs) placeBar(tabs);
+            // NaviMus writes its settings often: one pass on the next turn of the run loop for any number of them.
+            static BOOL pending;
+            if (pending) return;
+            pending = YES;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                pending = NO;
+                UITabBarController *tabs = sTabs;
+                if (tabs) placeBar(tabs);
+            });
         }];
     }
     FZLog("redesign: player %@", layout ? @"installed" : @"NOT installed");
+}
+
+void FZRRecheckNaviMusMini(void) {
+    for (NSNumber *delay in @[@0, @0.2, @0.45]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UITabBarController *tabs = sTabs;
+            if (tabs && FZRPlayerActive() && FZNowPlayingInfo()) FZRSetNaviMusMiniHidden(tabs, YES);
+        });
+    }
 }
 
 UITabBarController *FZRPlayerTabs(void) { return sTabs; }
