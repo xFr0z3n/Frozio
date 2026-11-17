@@ -55,6 +55,8 @@ NSArray *FZRPlayerOptionSections(void);
 UIView *FZRNaviMusMiniBand(UITabBarController *tabs);
 /// Hides or shows NaviMus's band (and keeps it hidden through SwiftUI's updates while `hidden`).
 void FZRSetNaviMusMiniHidden(UITabBarController *tabs, BOOL hidden);
+/// Hides NaviMus's mini player again now and once a page change has settled (it can draw a new one then).
+void FZRRecheckNaviMusMini(void);
 /// Whether NaviMus's own player is open on screen because Frozio showed it.
 BOOL FZRNaviMusPlayerShown(void);
 /// Shows NaviMus's own player as it is (the queue, ratings, what Frozio hasn't rebuilt). Frozio's bar steps aside

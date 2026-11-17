@@ -165,6 +165,14 @@ static void startLyricsDemo(void) {
             NSLog(@"[harness] tap probe live=%d bass %.2f mid %.2f treble %.2f bands %@", FZRAudioLevelsLive(), f.bass, f.mid, f.treble, bands);
         });
     }
+    // -FZHarnessCoverPrefetch "artist|album": downloads and prepares that album's animated cover.
+    NSArray *prefetch = [[NSUserDefaults.standardUserDefaults stringForKey:@"FZHarnessCoverPrefetch"] componentsSeparatedByString:@"|"];
+    if (prefetch.count == 2) {
+        CFTimeInterval started = CACurrentMediaTime();
+        FZRAnimatedCoverFor(prefetch[0], prefetch[1], ^(NSURL *file) {
+            NSLog(@"[harness] cover prefetch → %@ in %.1f s", file.lastPathComponent ?: @"none", CACurrentMediaTime() - started);
+        });
+    }
     // -FZHarnessCoverMatch YES: how loosely animated covers match (FZRAnimatedCoverMatch).
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"FZHarnessCoverMatch"]) {
         NSArray *files = @[@"Yeat - 2093.mp4", @"Yeat - ADL.mp4", @"Travis Scott - UTOPIA.mp4", @"Kanye West - Donda (Deluxe).mp4", @"Playboi Carti - MUSIC.mp4"];

@@ -190,13 +190,31 @@ static void hideBand(UIView *band, BOOL hidden, CGFloat from) {
     }
 }
 
+// What was found last time, to check cheaply on each layout (the search walked NaviMus's whole root view on every
+// layout pass, which slowed the app down while pages moved; device, build 51).
+static __weak UIView *sCard, *sBand;
+static CFTimeInterval sLastSearch;
+
+static BOOL stillHidden(UIView *view, UITabBarController *tabs) {
+    return view && view.window == tabs.view.window && objc_getAssociatedObject(view, &kBandHiddenKey) && view.layer.mask;
+}
+
 void FZRSetNaviMusMiniHidden(UITabBarController *tabs, BOOL hidden) {
     if (sShown || sBusy) return;   // NaviMus's player is in use; it's hidden again when that ends
     if (!hidden) {
         for (UIView *view in sHiddenBands.allObjects) hideBand(view, NO, 0);
+        sCard = sBand = nil;
         return;
     }
+    // Both still in place and masked: nothing to do, unless it's been a while (NaviMus may have built a new one).
+    CFTimeInterval now = CACurrentMediaTime();
+    UIView *knownCard = sCard, *knownBand = sBand;
+    if ((knownCard || knownBand) && (!knownCard || stillHidden(knownCard, tabs)) && (!knownBand || stillHidden(knownBand, tabs))
+        && now - sLastSearch < 1.0) return;
+    sLastSearch = now;
     UIView *card = rootCard(tabs), *band = contentBand(tabs);
+    sCard = card;
+    sBand = band;
     NSMutableArray *views = [NSMutableArray array];
     if (card) [views addObject:card];
     if (band) [views addObject:band];

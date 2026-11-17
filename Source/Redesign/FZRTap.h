@@ -10,6 +10,8 @@
 
 /// Taps `point` (window coordinates) in `window`. Synchronous: the touch has ended when it returns.
 BOOL FZRTap(UIWindow *window, CGPoint point);
+/// The same, the finger lifted `hold` seconds later (on a later turn of the run loop), as a person taps.
+BOOL FZRTapHeld(UIWindow *window, CGPoint point, NSTimeInterval hold);
 
 /// The same, aimed at what `root` has at `point` (window coordinates), whatever lies over it in the window (a
 /// view controller presented over the app).

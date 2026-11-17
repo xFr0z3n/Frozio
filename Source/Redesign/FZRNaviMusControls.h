@@ -52,3 +52,6 @@ void FZRSetNaviMusBarHidden(UIViewController *page, BOOL hidden, id<UIViewContro
 
 /// Installs page interception when the redesign is on. Call before NaviMus's main().
 void FZRInstallPages(void);
+
+/// NaviMus's own icon for a menu item, once Frozio has read one of its menus holding it; nil before.
+UIImage *FZRNaviMusMenuIcon(NSString *title);
