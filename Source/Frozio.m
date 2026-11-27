@@ -7,6 +7,7 @@
 #import "Prefs/FZSettings.h"
 #import "Fixes/FZCloudKitGuard.h"
 #import "Fixes/FZPausedStatus.h"
+#import "Fixes/FZFreshStart.h"
 #import "Diagnostics/FZScreenCensus.h"
 #import "Diagnostics/FZDebugRemote.h"
 #import "Settings/FZSettingsEntry.h"
@@ -28,6 +29,7 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZLog("loaded v%s", FROZIO_VERSION);
         if (!FZVersionGatePassed()) return; // unknown NaviMus build: stay completely inert
         [FZSettings registerDefaults];
+        FZApplyFreshStart();   // before NaviMus reads its last tab and pages
         // Runs before NaviMus's main(): SwiftData builds its ModelContainer later, after login.
         if ([[FZSettings defaults] boolForKey:FZSettingsKeyCloudKitGuard]) FZInstallCloudKitGuard();
         // Before NaviMus reads its settings.json: apply (or undo) the accent as NaviMus's own tint.

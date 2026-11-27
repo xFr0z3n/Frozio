@@ -228,7 +228,7 @@ static id plistSafe(id v) {
     return [v description] ?: @"";
 }
 
-static Reply screenshot(double scale, double quality) {
+static Reply screenshot(double scale, double quality, NSString *mode) {
     UIWindowScene *scene = keyWindow().windowScene;
     CGRect bounds = scene.coordinateSpace.bounds;
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
@@ -239,7 +239,14 @@ static Reply screenshot(double scale, double quality) {
         UIRectFill(bounds);
         for (UIWindow *w in allWindows()) {
             if (w.hidden || w.alpha < 0.01 || w.windowScene != scene) continue;
-            [w drawViewHierarchyInRect:w.frame afterScreenUpdates:NO];
+            if ([mode isEqualToString:@"layer"]) {
+                CGContextSaveGState(ctx.CGContext);
+                CGContextTranslateCTM(ctx.CGContext, w.frame.origin.x, w.frame.origin.y);
+                [w.layer renderInContext:ctx.CGContext];
+                CGContextRestoreGState(ctx.CGContext);
+            } else {
+                [w drawViewHierarchyInRect:w.frame afterScreenUpdates:[mode isEqualToString:@"update"]];
+            }
         }
     }];
     return (Reply){ UIImageJPEGRepresentation(image, quality), @"image/jpeg", 200 };
@@ -253,7 +260,7 @@ static Reply handle(NSString *path, NSDictionary<NSString *, NSString *> *q) {
                        @"state": @(UIApplication.sharedApplication.applicationState),
                        @"screen": NSStringFromCGRect(UIScreen.mainScreen.bounds) });
     }
-    if ([path isEqualToString:@"/shot"]) return screenshot(num(@"scale", 0.5), num(@"q", 0.7));
+    if ([path isEqualToString:@"/shot"]) return screenshot(num(@"scale", 0.5), num(@"q", 0.7), q[@"mode"] ?: @"update");
     if ([path isEqualToString:@"/tree"]) {
         NSMutableString *out = [NSMutableString string];
         BOOL all = [q[@"all"] isEqualToString:@"1"];
