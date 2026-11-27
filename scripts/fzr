@@ -1,0 +1,154 @@
+#!/usr/bin/python3 -I
+"""fzr: drive Frozio (debug build) on the iPhone over the USB CoreDevice tunnel.
+
+  fzr launch                 terminate + launch the app with the remote token (port 7357 opens)
+  fzr kill                   terminate the app (like swiping it away)
+  fzr away [secs]            send the app to the background (opens Settings), wait, bring it back
+  fzr shot [file] [scale]    screenshot -> JPEG (default /tmp/fzr/shot.jpg, scale 0.5)
+  fzr tap X Y [hold]         tap at screen points
+  fzr drag X1 Y1 X2 Y2 [dur] drag / swipe
+  fzr press LABEL            accessibility-activate the first element whose label contains LABEL
+  fzr tree [all] | ax | vcs | hit X Y
+  fzr log [tail] [grep] | logclear
+  fzr defaults [prefix] | set KEY VALUE [bool|int|double|string|delete]
+  fzr nowplaying | class NAME | classes FILTER | notify NAME
+  fzr get PATH?query         raw request
+Screen points: iPhone 13 is 390x844.
+"""
+import json, os, secrets, subprocess, sys, time, urllib.parse, urllib.request
+
+DEVICE = os.environ.get("FZ_DEVICE", "00008110-001128601A33801E")
+BUNDLE = "com.reillywilkinson.NaviMus"
+PORT = 7357
+HOME = os.path.expanduser("~/Library/Application Support/FrozioSigning")
+TOKEN_FILE = os.path.join(HOME, "remote-token")
+CACHE = os.path.join(HOME, "tunnel-ip")
+OUT = "/tmp/fzr"
+
+
+def token():
+    if not os.path.exists(TOKEN_FILE):
+        os.makedirs(HOME, exist_ok=True)
+        with open(os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
+            f.write(secrets.token_hex(16))
+    return open(TOKEN_FILE).read().strip()
+
+
+def devicectl(*args, check=True):
+    return subprocess.run(["xcrun", "devicectl", *args], capture_output=True, text=True, check=check)
+
+
+def tunnel_ip(refresh=False):
+    if not refresh and os.path.exists(CACHE):
+        return open(CACHE).read().strip()
+    path = os.path.join(OUT, "details.json")
+    os.makedirs(OUT, exist_ok=True)
+    devicectl("device", "info", "details", "--device", DEVICE, "-j", path, "-q")
+    ip = json.load(open(path))["result"]["connectionProperties"]["tunnelIPAddress"]
+    open(CACHE, "w").write(ip)
+    return ip
+
+
+def request(path, params=None, timeout=20):
+    params = dict(params or {})
+    params["t"] = token()
+    query = urllib.parse.urlencode(params)
+    for attempt in range(2):
+        url = f"http://[{tunnel_ip(refresh=attempt > 0)}]:{PORT}{path}?{query}"
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            return e.read()
+        except (urllib.error.URLError, OSError):
+            if attempt:
+                raise SystemExit("fzr: no answer from the app (is it running in front, launched with `fzr launch`?)")
+    return b""
+
+
+def launch():
+    devicectl("device", "process", "launch", "--device", DEVICE, "--terminate-existing", BUNDLE,
+              "-FZRemoteToken", token())
+    for _ in range(40):
+        time.sleep(0.5)
+        try:
+            print(request("/ping", timeout=2).decode())
+            return
+        except SystemExit:
+            pass
+    raise SystemExit("fzr: launched, but the remote port never answered")
+
+
+def pid():
+    path = os.path.join(OUT, "procs.json")
+    devicectl("device", "info", "processes", "--device", DEVICE, "-j", path, "-q")
+    for p in json.load(open(path))["result"]["runningProcesses"]:
+        if p.get("executable", "").endswith("/Arpeggi"):
+            return p["processIdentifier"]
+    return None
+
+
+def kill():
+    p = pid()
+    if p:
+        devicectl("device", "process", "terminate", "--device", DEVICE, "--pid", str(p), "--kill", check=False)
+    print("killed" if p else "not running")
+
+
+def main(argv):
+    if not argv:
+        print(__doc__); return
+    cmd, a = argv[0], argv[1:]
+    os.makedirs(OUT, exist_ok=True)
+    if cmd == "launch":
+        launch()
+    elif cmd == "kill":
+        kill()
+    elif cmd == "away":
+        devicectl("device", "process", "launch", "--device", DEVICE, "com.apple.Preferences")
+        time.sleep(float(a[0]) if a else 3)
+        # Bring it back without restarting (no --terminate-existing).
+        devicectl("device", "process", "launch", "--device", DEVICE, BUNDLE, "-FZRemoteToken", token())
+        print("back")
+    elif cmd == "shot":
+        path = a[0] if a else os.path.join(OUT, "shot.jpg")
+        data = request("/shot", {"scale": a[1] if len(a) > 1 else "0.5"})
+        open(path, "wb").write(data)
+        print(path)
+    elif cmd == "tap":
+        params = {"x": a[0], "y": a[1]}
+        if len(a) > 2: params["hold"] = a[2]
+        print(request("/tap", params).decode(), end="")
+    elif cmd == "drag":
+        print(request("/drag", {"x1": a[0], "y1": a[1], "x2": a[2], "y2": a[3], "dur": a[4] if len(a) > 4 else "0.3"}).decode(), end="")
+    elif cmd == "press":
+        print(request("/press", {"label": " ".join(a)}).decode(), end="")
+    elif cmd == "tree":
+        print(request("/tree", {"all": "1"} if a[:1] == ["all"] else {}).decode(), end="")
+    elif cmd in ("ax", "vcs", "nowplaying", "logclear", "ping"):
+        print(request("/" + cmd).decode(), end="")
+    elif cmd == "hit":
+        print(request("/hit", {"x": a[0], "y": a[1]}).decode(), end="")
+    elif cmd == "log":
+        params = {"tail": a[0] if a else "200"}
+        if len(a) > 1: params["grep"] = a[1]
+        print(request("/log", params).decode())
+    elif cmd == "defaults":
+        print(request("/defaults", {"prefix": a[0] if a else "fz"}).decode())
+    elif cmd == "set":
+        print(request("/set", {"k": a[0], "v": a[1] if len(a) > 1 else "", "type": a[2] if len(a) > 2 else "string"}).decode(), end="")
+    elif cmd == "class":
+        print(request("/class", {"name": a[0]}).decode(), end="")
+    elif cmd == "classes":
+        print(request("/classes", {"filter": a[0] if a else ""}).decode(), end="")
+    elif cmd == "notify":
+        print(request("/notify", {"name": a[0]}).decode(), end="")
+    elif cmd == "get":
+        path, _, q = a[0].partition("?")
+        print(request(path, dict(urllib.parse.parse_qsl(q))).decode(errors="replace"), end="")
+    else:
+        print(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

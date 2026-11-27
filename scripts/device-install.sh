@@ -52,6 +52,7 @@ codesign --verify --deep --strict "$APP"
 xcrun devicectl device install app --device "$DEVICE" "$APP"
 BID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
 if [ "${FZ_NO_LAUNCH:-0}" != 1 ]; then
-  xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BID" || true
+  # Debug builds open the scripts/fzr control port when launched with the token.
+  "$(dirname "$0")/fzr" launch || xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BID" || true
 fi
 echo "installed $BID"

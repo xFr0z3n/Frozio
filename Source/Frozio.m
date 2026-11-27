@@ -7,6 +7,7 @@
 #import "Prefs/FZSettings.h"
 #import "Fixes/FZCloudKitGuard.h"
 #import "Diagnostics/FZScreenCensus.h"
+#import "Diagnostics/FZDebugRemote.h"
 #import "Settings/FZSettingsEntry.h"
 #import "Settings/Kit/FZPage.h"
 #import "Redesign/FZNaviMusTint.h"
@@ -42,6 +43,7 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZInstallSettingsEntry();
 #ifdef FROZIO_DEBUG
         FZInstallScreenCensus(); // debug-only diagnostics for picking verified hook targets
+        FZInstallDebugRemote();  // scripts/fzr control port, only with -FZRemoteToken
 #endif
         // Feature modules install here, each checking FZSettings and its own preconditions.
         // Lock screen lyrics: a pass-through hook that reads its switch live, so it installs either way.

@@ -70,7 +70,7 @@ BOOL FZRTapIn(UIView *root, CGPoint point) {
 
 // One phase of a touch, sent through UIApplication as a real one is.
 static void sendPhase(UIApplication *app, UIEvent *event, UITouch *touch, CGPoint screenPoint, NSInteger phase) {
-    BOOL touching = phase == UITouchPhaseBegan;
+    BOOL touching = phase == UITouchPhaseBegan || phase == UITouchPhaseMoved || phase == UITouchPhaseStationary;
     IOHIDEventRef hid = hidEvent(screenPoint, touching);
     ((void (*)(id, SEL, NSInteger))objc_msgSend)(touch, NSSelectorFromString(@"setPhase:"), phase);
     ((void (*)(id, SEL, NSTimeInterval))objc_msgSend)(touch, NSSelectorFromString(@"setTimestamp:"), NSProcessInfo.processInfo.systemUptime);
@@ -127,4 +127,43 @@ static BOOL tapView(UIWindow *window, CGPoint point, UIView *target) {
 
 BOOL FZRTapHeld(UIWindow *window, CGPoint point, NSTimeInterval hold) {
     return tapViewHeld(window, point, nil, hold);
+}
+
+// A finger drag from `from` to `to` (window coordinates) over `duration`, ~60 moves a second, then lifted.
+BOOL FZRDrag(UIWindow *window, CGPoint from, CGPoint to, NSTimeInterval duration) {
+    if (!window || !loadIOKit()) return NO;
+    UIApplication *app = UIApplication.sharedApplication;
+    UIView *view = [window hitTest:from withEvent:nil];
+    UITouch *touch = [UITouch new];
+    for (NSString *selector in @[@"setWindow:", @"setView:", @"setTapCount:", @"setPhase:", @"setTimestamp:",
+                                 @"_setLocationInWindow:resetPrevious:", @"_setIsFirstTouchForView:", @"_setHidEvent:"]) {
+        if (!responds(touch, selector)) return NO;
+    }
+    if (!responds(app, @"_touchesEvent")) return NO;
+    send(touch, @"setWindow:", window);
+    send(touch, @"setView:", view);
+    ((void (*)(id, SEL, NSUInteger))objc_msgSend)(touch, NSSelectorFromString(@"setTapCount:"), 1);
+    ((void (*)(id, SEL, CGPoint, BOOL))objc_msgSend)(touch, NSSelectorFromString(@"_setLocationInWindow:resetPrevious:"), from, YES);
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(touch, NSSelectorFromString(@"_setIsFirstTouchForView:"), YES);
+    id<UICoordinateSpace> space = window.screen.coordinateSpace;
+    UIEvent *event = ((UIEvent *(*)(id, SEL))objc_msgSend)(app, NSSelectorFromString(@"_touchesEvent"));
+    sendPhase(app, event, touch, [window convertPoint:from toCoordinateSpace:space], UITouchPhaseBegan);
+
+    NSInteger steps = MAX(2, (NSInteger)(duration * 60));
+    for (NSInteger i = 1; i <= steps; i++) {
+        CGFloat t = (CGFloat)i / steps;
+        CGPoint p = CGPointMake(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
+        BOOL last = i == steps;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(duration * t * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            ((void (*)(id, SEL, CGPoint, BOOL))objc_msgSend)(touch, NSSelectorFromString(@"_setLocationInWindow:resetPrevious:"), p, NO);
+            UIEvent *e = ((UIEvent *(*)(id, SEL))objc_msgSend)(app, NSSelectorFromString(@"_touchesEvent"));
+            CGPoint sp = [window convertPoint:p toCoordinateSpace:space];
+            sendPhase(app, e, touch, sp, UITouchPhaseMoved);
+            if (last) {
+                UIEvent *e2 = ((UIEvent *(*)(id, SEL))objc_msgSend)(app, NSSelectorFromString(@"_touchesEvent"));
+                sendPhase(app, e2, touch, sp, UITouchPhaseEnded);
+            }
+        });
+    }
+    return YES;
 }
