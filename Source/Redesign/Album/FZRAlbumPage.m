@@ -791,6 +791,13 @@ static NSString *string(id value) {
 - (void)openArtist {
     if (_playlist) return;
     NSString *artistID = string(_album[@"artistId"]);
+    // NaviMus's own artist button in its page's header (its OpenArtistIntent reported success but opened nothing from
+    // Library → Albums on device, build 61).
+    NSString *name = _header.artist.text;
+    if (name.length && FZRActivateNaviMusControl(_naviMusPage, nil, @[name])) {
+        FZLog("redesign album: NaviMus's artist button \"%@\" pressed", name);
+        return;
+    }
     if (!artistID.length) return;
     __weak typeof(self) weakSelf = self;
     FZRNaviMusOpen(@"Artist", artistID, ^(BOOL ok, NSString *why) { [weakSelf report:@"open the artist" ok:ok why:why]; });
