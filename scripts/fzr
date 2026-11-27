@@ -7,6 +7,7 @@
   fzr shot [file] [scale] [mode]  screenshot -> JPEG (default /tmp/fzr/shot.jpg, scale 0.5; mode layer|screen|update|noupdate)
   fzr tap X Y [hold]         tap at screen points
   fzr drag X1 Y1 X2 Y2 [dur] drag / swipe
+  fzr type TEXT [clear]      type into the focused field ("\n" = return)
   fzr press LABEL            accessibility-activate the first element whose label contains LABEL
   fzr tree [all] | ax | vcs | hit X Y
   fzr log [tail] [grep] | logclear
@@ -130,6 +131,10 @@ def main(argv):
         print(request("/tap", params).decode(), end="")
     elif cmd == "drag":
         print(request("/drag", {"x1": a[0], "y1": a[1], "x2": a[2], "y2": a[3], "dur": a[4] if len(a) > 4 else "0.3"}).decode(), end="")
+    elif cmd == "type":
+        params = {"text": a[0].replace("\\n", "\n")}
+        if a[1:2] == ["clear"]: params["clear"] = "1"
+        print(request("/type", params).decode(), end="")
     elif cmd == "press":
         print(request("/press", {"label": " ".join(a)}).decode(), end="")
     elif cmd == "tree":

@@ -403,7 +403,7 @@ static void raiseShield(UIWindow *window) {
     sShield = [window snapshotViewAfterScreenUpdates:NO];
     if (!sShield) return;
     sShield.frame = window.bounds;
-    sShield.userInteractionEnabled = YES;   // nothing reaches NaviMus's hidden player meanwhile
+    sShield.userInteractionEnabled = NO;    // Frozio finds NaviMus's controls under it by hit-testing
     [window addSubview:sShield];
 }
 
@@ -504,12 +504,12 @@ static void runPlayerAction(UITabBarController *tabs, UIView *frozioBar, NSArray
                 FZLog("player: NaviMus's player menu at %@", NSStringFromCGPoint(point));
                 step = nil;
                 FZRPerformMenuActionUnseen(tabs.view.window, point, wanted, ^(BOOL ok) {
-                    finishAction(tabs, bar, ok, ok ? nil : @"NaviMus's player menu has no Download item.", done);
+                    finishAction(tabs, bar, ok, ok ? nil : [NSString stringWithFormat:@"NaviMus's player menu has no %@ item.", wanted.firstObject], done);
                 });
                 return;
             }
             step = nil;
-            finishAction(tabs, bar, NO, @"NaviMus's player has no Download control or menu.", done);
+            finishAction(tabs, bar, NO, [NSString stringWithFormat:@"NaviMus's player has no %@ control or menu.", wanted.firstObject], done);
             return;
         }
         if (tries > 30) {

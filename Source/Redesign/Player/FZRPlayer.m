@@ -1631,7 +1631,7 @@ static NSDictionary *currentSong(void) {
             if (ok) return;
             UIViewController *top = FZRPlayerTabs().view.window.rootViewController;
             while (top.presentedViewController) top = top.presentedViewController;
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Couldn't %@", what.lowercaseString]
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Couldn't do \u201C%@\u201D", what]
                                                                            message:why preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
             [top presentViewController:alert animated:YES completion:nil];

@@ -566,6 +566,7 @@ void FZRInstallAnimatedCoverWarmUp(void) {
     AVPlayerLayer *_layer;
     UIImageView *_poster;
     BOOL _visible;
+    CFTimeInterval _asked;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -612,6 +613,7 @@ void FZRInstallAnimatedCoverWarmUp(void) {
     if (!file) { [self stop]; return; }
     if ([file isEqual:_file]) { [self resume]; return; }
     [self release:_loop];
+    _asked = CACurrentMediaTime();
     _file = [file copy];
     _loop = loopFor(file);
     _loop.users++;
@@ -645,6 +647,12 @@ void FZRInstallAnimatedCoverWarmUp(void) {
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_layer.readyForDisplay && self->_asked > 0) {
+            FZLog("animated covers: first frame %.0f ms after asked (%@, poster %d)", (CACurrentMediaTime() - self->_asked) * 1000,
+                  self->_file.lastPathComponent.length > 40 ? [self->_file.lastPathComponent substringFromIndex:self->_file.lastPathComponent.length - 40] : self->_file.lastPathComponent,
+                  self->_poster.image != nil);
+            self->_asked = 0;
+        }
         if (self->_layer.readyForDisplay && self->_file && self.alpha < 1) [UIView animateWithDuration:0.25 animations:^{ self.alpha = 1; }];
     });
 }

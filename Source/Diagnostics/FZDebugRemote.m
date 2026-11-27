@@ -341,6 +341,19 @@ static Reply handle(NSString *path, NSDictionary<NSString *, NSString *> *q) {
         return text([NSString stringWithFormat:@"%@ \"%@\" activate=%d frame=%@\n", NSStringFromClass([found class]),
                                                [found accessibilityLabel], ok, rect([found accessibilityFrame])]);
     }
+    if ([path isEqualToString:@"/type"]) {
+        // Into whatever has the keyboard (a search field after a tap on it); "\n" presses return.
+        UIResponder *first = nil;
+        for (UIWindow *w in allWindows()) {
+            UIResponder *r = [w valueForKey:@"firstResponder"];
+            if (r) first = r;
+        }
+        if (![first conformsToProtocol:@protocol(UIKeyInput)]) return fail(409, @"nothing has the keyboard\n");
+        NSString *t = q[@"text"] ?: @"";
+        if ([q[@"clear"] isEqualToString:@"1"]) for (int i = 0; i < 200 && [(id<UIKeyInput>)first hasText]; i++) [(id<UIKeyInput>)first deleteBackward];
+        [(id<UIKeyInput>)first insertText:t];
+        return text([NSString stringWithFormat:@"typed into %@\n", NSStringFromClass(first.class)]);
+    }
     if ([path isEqualToString:@"/log"]) {
         NSString *log = [NSString stringWithContentsOfFile:FZLogFilePath() encoding:NSUTF8StringEncoding error:nil] ?: @"";
         NSArray *lines = [log componentsSeparatedByString:@"\n"];
