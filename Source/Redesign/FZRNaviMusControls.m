@@ -140,6 +140,16 @@ static NSArray *candidates(NSArray *elements, NSString *after, NSArray<NSString 
             id element = elements[i];
             if (!sRowTap && !([element accessibilityTraits] & UIAccessibilityTraitButton)) continue;
             if ([[element accessibilityLabel] caseInsensitiveCompare:wanted] != NSOrderedSame) continue;
+            // A song's row, not the page's title: NaviMus lists a row as its title, the artists, the download ring and
+            // its own "More". A single or a title track has the album's title in the header too, which was tapped
+            // instead (device, build 61: the song didn't play; the user saw an album open).
+            if (sRowTap) {
+                BOOL row = NO;
+                for (NSUInteger j = i + 1; j < MIN(elements.count, i + 5) && !row; j++) {
+                    row = [[elements[j] accessibilityLabel] isEqualToString:@"More"];
+                }
+                if (!row) continue;
+            }
             [found addObject:element];
             if (after.length) break;   // a row's own control or none: never the next row's
         }
@@ -281,6 +291,14 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
             }
             if (!CGRectContainsPoint(window.bounds, point)) {
                 FZLogError("redesign: NaviMus row %@ is off screen at %@", describe(element), NSStringFromCGPoint(point));
+                return;
+            }
+            // Only where the touch lands on NaviMus's own page: anything else there (the page under it, still in a
+            // push, or the album grid the user came from) would take it instead (the user: a song opened ROCKETS).
+            UIView *hit = [window hitTest:point withEvent:nil];
+            if (!hit || ![hit isDescendantOfView:root]) {
+                FZLogError("redesign: NaviMus row %@ at %@ is under %@, not its page; not tapped", describe(element),
+                           NSStringFromCGPoint(point), NSStringFromClass(hit.class));
                 return;
             }
             done = FZRTapHeld(window, point, 0.08);
