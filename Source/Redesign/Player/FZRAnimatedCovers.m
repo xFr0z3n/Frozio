@@ -478,14 +478,35 @@ static void forgetList(void) {
 
 static NSMutableDictionary<NSURL *, FZRCoverLoop *> *sLoops;
 
-// Out of the app every loop is paused, and played again on the way back by the views showing it: left running, a
-// muted video's clock kept going while iOS drew nothing, and it raced to catch up for a second on return (device).
+// Out of the app every loop is paused. Coming back, each loop in use is first moved to exactly the frame it stopped
+// on and only then played: played straight away, its decoder raced through the frames it had missed and the cover
+// visibly sped up for about 0.8 s (the user's screen recording, build 60: motion per frame climbing from 1.2 to 2.0
+// before settling). Until then the views don't start their loops themselves.
+static BOOL sComingBack;
+static NSInteger sSeeking;   // loops still moving to their frame
+
 static void watchAppState(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil
                                                          queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            sComingBack = YES;
             for (FZRCoverLoop *loop in sLoops.allValues) [loop.player pause];
+        }];
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
+                                                         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            sComingBack = NO;
+            for (FZRCoverLoop *loop in sLoops.allValues) {
+                if (loop.users <= 0) continue;
+                AVQueuePlayer *player = loop.player;
+                sSeeking++;
+                [player seekToTime:player.currentTime toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL done) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        sSeeking = MAX(0, sSeeking - 1);
+                        if (!sComingBack) [player play];
+                    });
+                }];
+            }
         }];
     });
 }
@@ -626,6 +647,7 @@ void FZRInstallAnimatedCoverWarmUp(void) {
 }
 
 - (void)resume {
+    if (sComingBack || sSeeking > 0) return;   // on the way back: the loop is started once it's on its frame
     if (_loop && self.window) [_loop.player play];
 }
 
