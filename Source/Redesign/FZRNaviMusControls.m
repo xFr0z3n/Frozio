@@ -324,7 +324,7 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
             FZLogError("redesign: NaviMus control %@ is off screen at %@", describe(element), NSStringFromCGPoint(point));
             return;
         }
-        done = FZRTap(window, point);
+        done = FZRTapHeld(window, point, 0.08);   // held like a finger: SwiftUI let instant taps on its menus go by (build 61)
         FZLog("redesign: NaviMus control %@ tapped=%d at %@", describe(element), done, NSStringFromCGPoint(point));
     });
     if (done) return YES;
