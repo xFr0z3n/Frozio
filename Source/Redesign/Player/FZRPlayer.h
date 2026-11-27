@@ -58,6 +58,8 @@ void FZRSetNaviMusMiniHidden(UITabBarController *tabs, BOOL hidden);
 /// Hides NaviMus's mini player again now and once a page change has settled (it can draw a new one then).
 void FZRRecheckNaviMusMini(void);
 extern NSString *const FZRKeyTabsFirstPage;   // "fz.redesign.tabsFirstPage": a tab tap opens its first page
+/// Chip labels readable on a light accent (FZRLightAccentText.m).
+void FZRInstallLightAccentText(void);
 /// Hooks tab taps (FZRTabReset.m).
 void FZRInstallTabReset(void);
 /// Closes NaviMus's own player if it's open without Frozio having shown it. YES if closed.
