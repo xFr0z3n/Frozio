@@ -40,6 +40,7 @@ __attribute__((constructor)) static void FrozioInit(void) {
             FZInstallServer();     // NaviMus's server and login, from its own requests
             FZRInstallPages();     // rebuilt pages laid over NaviMus's
             FZRInstallPlayer();    // the rebuilt mini player and player over NaviMus's
+            FZRInstallTabReset();  // a tab tap opens its first page; a stray NaviMus player is closed
         }
         // Frozio settings: always available (it's how every other toggle is reached).
         FZRegisterPages();

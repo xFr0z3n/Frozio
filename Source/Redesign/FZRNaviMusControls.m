@@ -163,6 +163,25 @@ static UIScrollView *scrollViewOf(UIView *root, CGPoint pointInRoot) {
     return best;
 }
 
+// NaviMus's main list on a page: the biggest vertically scrolling scroll view (not inside Frozio's overlay).
+static UIScrollView *mainListOf(UIView *root) {
+    UIScrollView *best = nil;
+    CGFloat bestArea = 0;
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:root];
+    while (queue.count) {
+        UIView *view = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if (objc_getAssociatedObject(view, &kOverlayKey)) continue;
+        if ([view isKindOfClass:UIScrollView.class]) {
+            UIScrollView *list = (UIScrollView *)view;
+            CGFloat area = list.bounds.size.width * list.bounds.size.height;
+            if (list.contentSize.height > list.bounds.size.height * 0.5 && area > bestArea) { best = list; bestArea = area; }
+        }
+        [queue addObjectsFromArray:view.subviews];
+    }
+    return best;
+}
+
 static CGPoint activationPointIn(UIWindow *window, id element) {
     CGPoint screen = [element accessibilityActivationPoint];
     return [window convertPoint:screen fromCoordinateSpace:window.screen.coordinateSpace];
@@ -211,6 +230,25 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
             FZLog("redesign: NaviMus control %@ activated=%d", describe(element), done);
             if (done) return;
         }
+        // A row further down doesn't exist yet: NaviMus's list builds only the rows in its view (device, build 57:
+        // songs past the sixth played alone). Its list is scrolled through, a screen at a time from the top, until
+        // the row is there.
+        if (sRowTap && !found.count) {
+            UIScrollView *list = mainListOf(root);
+            if (list) {
+                CGFloat top = -list.adjustedContentInset.top;
+                CGFloat maxY = MAX(top, list.contentSize.height + list.adjustedContentInset.bottom - list.bounds.size.height);
+                CGFloat step = MAX(100, list.bounds.size.height * 0.6);
+                for (CGFloat y = top; y <= maxY + step && !found.count; y += step) {
+                    [list setContentOffset:CGPointMake(list.contentOffset.x, MIN(y, maxY)) animated:NO];
+                    [list layoutIfNeeded];
+                    elements = collectAll(page);
+                    found = candidates(elements, after, labels);
+                    maxY = MAX(top, list.contentSize.height + list.adjustedContentInset.bottom - list.bounds.size.height);
+                }
+                FZLog("redesign: NaviMus's list scrolled to %.0f for %@: %@", list.contentOffset.y, labels.firstObject, found.count ? @"found" : @"not found");
+            }
+        }
         // iOS 17 opens a SwiftUI menu only on a touch: tap it, as VoiceOver does when activation is refused.
         id element = found.firstObject;
         if (!element) return;
@@ -218,7 +256,7 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
         if (sRowTap) {
             // A row: tapped where it is. Only when it's out of sight is the list scrolled, and only within its own
             // range: a list pushed past its end swallowed the next touch, so songs often didn't start (build 51).
-            UIScrollView *list = scrollViewOf(root, [root convertPoint:point fromView:window]);
+            UIScrollView *list = scrollViewOf(root, [root convertPoint:point fromView:window]) ?: mainListOf(root);
             CGRect visible = list ? [list convertRect:list.bounds toView:window] : window.bounds;
             visible = CGRectIntersection(CGRectInset(visible, 0, 60), window.bounds);
             if (list && !CGRectContainsPoint(visible, point)) {

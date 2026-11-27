@@ -339,7 +339,7 @@ void FZRShowNaviMusPlayer(UITabBarController *tabs, UIView *frozioBar) {
 #pragma mark - a control of NaviMus's player, out of sight
 
 static NSArray<NSString *> *closeLabels(void) {
-    return @[@"Close", @"Dismiss", @"Minimize", @"Minimise", @"Collapse", @"Hide Player", @"Close Player", @"chevron.down", @"Down", @"Done"];
+    return @[@"Go Down", @"Close", @"Dismiss", @"Minimize", @"Minimise", @"Collapse", @"Hide Player", @"Close Player", @"chevron.down", @"Down", @"Done"];
 }
 
 // Frozio's own pages presented over the app (its player) let touches through while NaviMus's player is used
@@ -362,6 +362,36 @@ static void passThroughFrozio(UITabBarController *tabs, BOOL through) {
     }
 }
 
+// NaviMus's own player open when Frozio didn't show it (left behind after a menu action whose sheet came up first,
+// or restored when the app comes back): invisible under Frozio's mask, its AirPlay, share and other buttons sat over
+// the tab bar and took its taps (device, build 57: Home opened AirDrop). Closed with its own "Go Down".
+BOOL FZRCloseStrayNaviMusPlayer(UITabBarController *tabs) {
+    if (!tabs || sShown || sBusy) return NO;
+    UIView *band = FZRNaviMusMiniBand(tabs);
+    if (!band || band.bounds.size.height <= kOpenHeight) return NO;
+    id close = buttonLabelled(bandElements(tabs, band), closeLabels());
+    BOOL closed = close && press(tabs.view.window, close);
+    FZLog("player: stray NaviMus player (band %.0f pt) closed=%d", band.bounds.size.height, closed);
+    return closed;
+}
+
+static void closeStrayLater(UITabBarController *tabs, NSUInteger tries) {
+    __weak UITabBarController *weakTabs = tabs;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UITabBarController *t = weakTabs;
+        if (!t || sShown || sBusy) return;
+        UIView *band = FZRNaviMusMiniBand(t);
+        if (band && band.bounds.size.height > kOpenHeight) {
+            FZRCloseStrayNaviMusPlayer(t);
+            if (tries < 12) closeStrayLater(t, tries + 1);
+        } else if (FZRPlayerActive()) {
+            FZRSetNaviMusMiniHidden(t, YES);
+        }
+    });
+}
+
+void FZRCloseStrayNaviMusPlayerSoon(UITabBarController *tabs) { closeStrayLater(tabs, 0); }
+
 static void finishAction(UITabBarController *tabs, UIView *frozioBar, BOOL ok, NSString *why, void (^completion)(BOOL, NSString *)) {
     UIView *band = FZRNaviMusMiniBand(tabs);
     UIWindow *window = tabs.view.window;
@@ -377,6 +407,8 @@ static void finishAction(UITabBarController *tabs, UIView *frozioBar, BOOL ok, N
     frozioBar.userInteractionEnabled = YES;
     passThroughFrozio(tabs, NO);
     if (band && FZRPlayerActive()) FZRSetNaviMusMiniHidden(tabs, YES);
+    // A sheet NaviMus presents from the item (Quick Settings, playlists…) can keep its player from closing at once.
+    closeStrayLater(tabs, 0);
     // The unseen player and menu leave UIKit's status bar hidden until something asks again (harness).
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         for (UIViewController *vc = window.rootViewController; vc; vc = vc.presentedViewController) [vc setNeedsStatusBarAppearanceUpdate];

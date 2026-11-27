@@ -7,6 +7,7 @@
 #import "Settings/Kit/FZPageStyle.h"
 #import "Settings/Kit/FZKitCore.h"
 #import "Prefs/FZSettings.h"
+#import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/Kit/FZRAccent.h"
 #import "Redesign/FZRAppLook.h"
 #import "Redesign/Album/FZRAlbumPage.h"
@@ -309,7 +310,7 @@ UIViewController *FZMakeSettingsPage(void) {
         FZNotedSection(@"Library", @[FZWithSymbol(FZSwitchRow(@"More sort options", @"Year (newest or oldest first) and Favourites for Albums.", FZKeyLibrarySorts), @"arrow.up.arrow.down"),
                                       FZWithSymbol(FZSwitchRow(@"Fix wrong covers in lists", @"NaviMus shows an earlier album's cover on a reused row.", @"fz.fix.coverReuse"), @"photo.on.rectangle")],
                        @"Applies the next time a sort menu opens or a list scrolls."),
-        FZNotedSection(@"Fixes", @[guard, FZWithSymbol(FZSwitchRow(@"Start fresh", @"Every launch opens Home, each tab on its first page, instead of where you left off.", FZKeyFreshStart), @"house")], FZRestartNote),
+        FZNotedSection(@"Fixes", @[guard, FZWithSymbol(FZSwitchRow(@"Tabs open their first page", @"Tapping Home, Search, Library… goes to that tab's first page, not the page you left there.", FZRKeyTabsFirstPage), @"square.grid.2x2"), FZWithSymbol(FZSwitchRow(@"Start fresh", @"Every launch opens Home, each tab on its first page, instead of where you left off.", FZKeyFreshStart), @"house")], FZRestartNote),
     ]];
 #ifdef FROZIO_DEBUG
     FZModRow *share = FZStatActionRow(@"Share log", @"Send frozio.log with AirDrop, Mail, Messages or Save to Files.",
