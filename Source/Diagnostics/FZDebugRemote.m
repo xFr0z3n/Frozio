@@ -11,6 +11,11 @@
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <MediaPlayer/MediaPlayer.h>
+#import <dlfcn.h>
+#import <execinfo.h>
+#import <signal.h>
+#import <fcntl.h>
+#import <sys/ucontext.h>
 #import "Core/FZLog.h"
 #import "Redesign/FZRTap.h"
 #import "Diagnostics/FZDebugRemote.h"
@@ -456,7 +461,58 @@ static void startListening(int attempt) {
     FZLog("remote: listening on port %d", kPort);
 }
 
+#pragma mark - crash catcher
+
+// Debug builds: a crash writes its address, its offset in each image and the backtrace to
+// Documents/Frozio/crash.txt (Frozio's own functions are stripped; the offsets map onto the dylib with otool).
+static int sCrashFD = -1;
+
+static void writeFrame(const char *what, void *address) {
+    Dl_info info;
+    char line[512];
+    if (dladdr(address, &info) && info.dli_fname) {
+        const char *name = strrchr(info.dli_fname, '/');
+        snprintf(line, sizeof line, "%s %p %s+0x%lx %s\n", what, address, name ? name + 1 : info.dli_fname,
+                 (unsigned long)((uintptr_t)address - (uintptr_t)info.dli_fbase), info.dli_sname ?: "");
+    } else {
+        snprintf(line, sizeof line, "%s %p ?\n", what, address);
+    }
+    write(sCrashFD, line, strlen(line));
+}
+
+static void crashed(int sig, siginfo_t *info, void *context) {
+    if (sCrashFD >= 0) {
+        char head[128];
+        snprintf(head, sizeof head, "signal %d at %p\n", sig, info ? info->si_addr : NULL);
+        write(sCrashFD, head, strlen(head));
+        ucontext_t *uc = context;
+        if (uc && uc->uc_mcontext) {
+            writeFrame("pc", (void *)uc->uc_mcontext->__ss.__pc);
+            writeFrame("lr", (void *)uc->uc_mcontext->__ss.__lr);
+        }
+        void *frames[64];
+        int n = backtrace(frames, 64);
+        for (int i = 0; i < n; i++) writeFrame("bt", frames[i]);
+        fsync(sCrashFD);
+    }
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+static void installCrashCatcher(void) {
+    NSString *path = [FZLogFilePath().stringByDeletingLastPathComponent stringByAppendingPathComponent:@"crash.txt"];
+    sCrashFD = open(path.fileSystemRepresentation, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    struct sigaction action = {0};
+    action.sa_sigaction = crashed;
+    action.sa_flags = SA_SIGINFO;
+    for (int sig = SIGILL; sig <= SIGSYS; sig++) {
+        if (sig == SIGKILL || sig == SIGSTOP || sig == SIGPIPE || sig == SIGALRM) continue;
+        if (sig == SIGSEGV || sig == SIGBUS || sig == SIGABRT || sig == SIGILL || sig == SIGFPE || sig == SIGTRAP) sigaction(sig, &action, NULL);
+    }
+}
+
 void FZInstallDebugRemote(void) {
+    installCrashCatcher();
     sToken = [NSUserDefaults.standardUserDefaults stringForKey:@"FZRemoteToken"];
     if (sToken.length < 8) return; // only when launched with -FZRemoteToken <token>
     sQueue = dispatch_queue_create("com.frozio.remote", DISPATCH_QUEUE_SERIAL);
