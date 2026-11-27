@@ -22,6 +22,9 @@ NSString *const FZSettingsKeyRedesign = @"fz.redesign";
     [[self defaults] registerDefaults:@{
         FZSettingsKeyAppIcon: @0,
         FZSettingsKeyCloudKitGuard: @YES,
+        @"fz.playback.pausedStatusClear": @2,   // FZKeyPausedStatus: 2 minutes
+        @"fz.redesign.tabsFirstPage": @YES,     // FZRKeyTabsFirstPage
+        @"fz.freshStart": @YES,                 // FZKeyFreshStart: Home and first pages each launch
         // The user's own settings export (2026-11-15) as everyone's starting point: the redesign on, the accent
         // 0x07D2FF in NaviMus too, lock screen lyrics, circles behind bar buttons but not behind shuffle and download,
         // the mini player without download and swipe, the player with the Fluid background, sleep timer in the right

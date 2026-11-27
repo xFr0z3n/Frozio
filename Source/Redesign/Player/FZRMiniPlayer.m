@@ -2,6 +2,7 @@
 // taurus/tweak/Sources/Redesigned/NowPlayingBar/NowPlayingBar.x @ fe3211c (GPL-3.0): the card's 24 pt radius,
 // its glass, the cover, the 2 pt progress line 3 pt off the bottom with a 24 % white track.
 // See FZRPlayer.h for how it sits over NaviMus's own.
+#import "Redesign/Player/FZRAnimatedCovers.h"
 #import <AVKit/AVKit.h>
 #import <objc/runtime.h>
 #import "Redesign/Player/FZRPlayer.h"
@@ -426,6 +427,7 @@ void FZRInstallPlayer(void) {
     if (!FZRRedesignActive()) return;
     FZRInstallQueue();
     FZRInstallLibraryChips();
+    FZRInstallAnimatedCoverWarmUp();
     BOOL layout = FZHookInstanceMethod(UITabBarController.class, @selector(viewDidLayoutSubviews), "v@:",
                                        (IMP)fz_tabsLayout, &fz_origTabsLayout, "redesign.player.tabs");
     // A song starting or the switch flipping lays the bar out again.

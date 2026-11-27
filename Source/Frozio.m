@@ -6,7 +6,10 @@
 #import "Core/FZVersionGate.h"
 #import "Prefs/FZSettings.h"
 #import "Fixes/FZCloudKitGuard.h"
+#import "Fixes/FZPausedStatus.h"
+#import "Fixes/FZFreshStart.h"
 #import "Diagnostics/FZScreenCensus.h"
+#import "Diagnostics/FZDebugRemote.h"
 #import "Settings/FZSettingsEntry.h"
 #import "Settings/Kit/FZPage.h"
 #import "Redesign/FZNaviMusTint.h"
@@ -26,6 +29,7 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZLog("loaded v%s", FROZIO_VERSION);
         if (!FZVersionGatePassed()) return; // unknown NaviMus build: stay completely inert
         [FZSettings registerDefaults];
+        FZApplyFreshStart();   // before NaviMus reads its last tab and pages
         // Runs before NaviMus's main(): SwiftData builds its ModelContainer later, after login.
         if ([[FZSettings defaults] boolForKey:FZSettingsKeyCloudKitGuard]) FZInstallCloudKitGuard();
         // Before NaviMus reads its settings.json: apply (or undo) the accent as NaviMus's own tint.
@@ -36,12 +40,14 @@ __attribute__((constructor)) static void FrozioInit(void) {
             FZInstallServer();     // NaviMus's server and login, from its own requests
             FZRInstallPages();     // rebuilt pages laid over NaviMus's
             FZRInstallPlayer();    // the rebuilt mini player and player over NaviMus's
+            FZRInstallTabReset();  // a tab tap opens its first page; a stray NaviMus player is closed
         }
         // Frozio settings: always available (it's how every other toggle is reached).
         FZRegisterPages();
         FZInstallSettingsEntry();
 #ifdef FROZIO_DEBUG
         FZInstallScreenCensus(); // debug-only diagnostics for picking verified hook targets
+        FZInstallDebugRemote();  // scripts/fzr control port, only with -FZRemoteToken
 #endif
         // Feature modules install here, each checking FZSettings and its own preconditions.
         // Lock screen lyrics: a pass-through hook that reads its switch live, so it installs either way.
@@ -53,5 +59,6 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZInstallLibrarySorts();    // Year and Favourites in NaviMus's album sort menu (reads its switch live)
         FZInstallAudioLevels();     // the music's levels for the visualizer and lyrics shaders
         FZInstallCoverReuseFix();   // NaviMus's grids keep a reused cell's old cover (reads its switch live)
+        FZInstallPausedStatus();    // "stopped" to the server after a while paused (reads its choice live)
     }
 }

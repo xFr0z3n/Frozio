@@ -6,7 +6,8 @@ Read this first in a new session, then `REDESIGN_PLAN.md`, `FEATURES.md` (newest
 
 - Owner: **xFr0z3n**. They test on an **iPhone 13, iOS 17.5.1**, with an external signer. The target look is chroma.pw's **iOS 26 Liquid Glass** redesign; on iOS 17 glass falls back to the grey translucent material, as chroma.pw does.
 - **Commit, PR and merge without asking** (standing permission). Never push to `main` directly; always use a branch and a PR.
-- **Build IPAs only on GitHub** (`gh workflow run build.yml --ref main -f debug=true`). Never build the tweak locally with Theos and never download the IPA here. Give the user the release link. **The Simulator harness can always be built and run locally.**
+- **Device loop (2026-11-27):** the iPhone is on USB. Build on GitHub, then `scripts/device-install.sh` (re-sign + install + launch with the remote token) and drive it with `scripts/fzr` (see FEATURES.md, "Device loop"). Test on the device yourself instead of asking the user to. The cert expires **2026-12-06**. Never keep the screen awake from the app (the user's wish).
+- **Build IPAs only on GitHub** (`gh workflow run build.yml --ref main -f debug=true`). Never build the tweak locally with Theos; the IPA is downloaded only by `scripts/device-install.sh`. Give the user the release link. **The Simulator harness can always be built and run locally.**
 - The user wants **everything 1:1 with chroma.pw** (spoti.pw), plus more options (everything customizable). They send device screenshots and `frozio.log` (Share log, debug build) after each build. Measure screenshots (pixel averages, Oklab) rather than eyeball them.
 
 ## Machine

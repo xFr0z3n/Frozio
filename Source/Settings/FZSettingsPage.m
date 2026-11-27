@@ -1,3 +1,5 @@
+#import "Fixes/FZPausedStatus.h"
+#import "Fixes/FZFreshStart.h"
 #import "FZSettingsPage.h"
 #import "Settings/FZAboutPage.h"
 #import "ArtistBlock/FZArtistBlock.h"
@@ -5,6 +7,7 @@
 #import "Settings/Kit/FZPageStyle.h"
 #import "Settings/Kit/FZKitCore.h"
 #import "Prefs/FZSettings.h"
+#import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/Kit/FZRAccent.h"
 #import "Redesign/FZRAppLook.h"
 #import "Redesign/Album/FZRAlbumPage.h"
@@ -303,11 +306,11 @@ UIViewController *FZMakeSettingsPage(void) {
     NSMutableArray *sections = [NSMutableArray arrayWithArray:@[
         FZNotedSection(@"Appearance", appearance, @"Changes to NaviMus's tint apply after you restart the app."),
         FZNotedSection(@"Lyrics", @[lockLyrics, FZWithSymbol(FZSwitchRow(@"Look up lyrics online", @"When NaviMus and your server have none: taurus's sources (BiniLyrics, Musixmatch, Unison, NetEase, LRCLIB, QQ Music, KuGou). Sends the song's title, artist, album and length.", @"fz.lyrics.lrclib"), @"magnifyingglass")], @"Applies right away, from the next line."),
-        FZSection(@"Playback", @[blocked]),
+        FZNotedSection(@"Playback", @[blocked, FZWithSymbol(FZChoiceRow(@"Clear paused status", @"Tells your server \"stopped\" after this long paused, so Now Playing (and Discord status plugins) stop showing the paused song. Needs NaviMus's Report playback.", FZKeyPausedStatus, FZPausedStatusChoices(), 2), @"pause.circle")], nil),
         FZNotedSection(@"Library", @[FZWithSymbol(FZSwitchRow(@"More sort options", @"Year (newest or oldest first) and Favourites for Albums.", FZKeyLibrarySorts), @"arrow.up.arrow.down"),
                                       FZWithSymbol(FZSwitchRow(@"Fix wrong covers in lists", @"NaviMus shows an earlier album's cover on a reused row.", @"fz.fix.coverReuse"), @"photo.on.rectangle")],
                        @"Applies the next time a sort menu opens or a list scrolls."),
-        FZNotedSection(@"Fixes", @[guard], FZRestartNote),
+        FZNotedSection(@"Fixes", @[guard, FZWithSymbol(FZSwitchRow(@"Tabs open their first page", @"Tapping Home, Search, Library… goes to that tab's first page, not the page you left there.", FZRKeyTabsFirstPage), @"square.grid.2x2"), FZWithSymbol(FZSwitchRow(@"Start fresh", @"Every launch opens Home, each tab on its first page, instead of where you left off.", FZKeyFreshStart), @"house")], FZRestartNote),
     ]];
 #ifdef FROZIO_DEBUG
     FZModRow *share = FZStatActionRow(@"Share log", @"Send frozio.log with AirDrop, Mail, Messages or Save to Files.",

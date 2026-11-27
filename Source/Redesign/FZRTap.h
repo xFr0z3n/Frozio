@@ -16,3 +16,7 @@ BOOL FZRTapHeld(UIWindow *window, CGPoint point, NSTimeInterval hold);
 /// The same, aimed at what `root` has at `point` (window coordinates), whatever lies over it in the window (a
 /// view controller presented over the app).
 BOOL FZRTapIn(UIView *root, CGPoint point);
+
+/// A finger drag from `from` to `to` (window coordinates) over `duration` seconds; returns at once, the moves
+/// and the lift follow on the main queue.
+BOOL FZRDrag(UIWindow *window, CGPoint from, CGPoint to, NSTimeInterval duration);

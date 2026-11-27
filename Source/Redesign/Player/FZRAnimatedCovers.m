@@ -7,6 +7,8 @@
 #import "Settings/Kit/FZPageStyle.h"
 #import "Prefs/FZSettings.h"
 #import "Core/FZLog.h"
+#import "Core/FZRemote.h"
+#import <MediaPlayer/MediaPlayer.h>
 #import <QuartzCore/QuartzCore.h>
 
 NSString *const FZRKeyAnimatedCoversURL = @"fz.animatedCovers.url";
@@ -332,8 +334,11 @@ NSString *FZRAnimatedCoverChosenFile(NSString *album) {
     return [file isKindOfClass:NSString.class] ? file : nil;
 }
 
+static void forgetReadyForAlbum(NSString *album);
+
 void FZRSetAnimatedCoverChosenFile(NSString *album, NSString *fileName) {
     FZLog("animated covers: %@ → %@ chosen", album, fileName ?: @"automatic");
+    forgetReadyForAlbum(album);
     setAlbumEntry(album, @"file", fileName);
 }
 
@@ -384,19 +389,47 @@ static void fetchAndPrepare(NSURL *remote, NSString *name, void (^completion)(NS
 }
 
 static NSMutableDictionary<NSString *, NSURL *> *sReady;   // "artist|album" → prepared file, for an instant answer
+// The same kept across launches (file names in the cache folder): after a restart the first cover had waited for
+// the folder to be listed again over the network (device, build 57: "still cover for a sec the first time").
+static NSString *const kReadyKey = @"fz.animatedCovers.ready";
+
+static NSURL *persistedReady(NSString *key) {
+    NSString *name = [[FZSettings defaults] dictionaryForKey:kReadyKey][key];
+    if (![name isKindOfClass:NSString.class]) return nil;
+    NSURL *file = [cacheFolder() URLByAppendingPathComponent:name];
+    return [NSFileManager.defaultManager fileExistsAtPath:file.path] ? file : nil;
+}
+
+static void persistReady(NSString *key, NSURL *file) {
+    NSMutableDictionary *all = [[[FZSettings defaults] dictionaryForKey:kReadyKey] mutableCopy] ?: [NSMutableDictionary dictionary];
+    if (file) all[key] = file.lastPathComponent; else [all removeObjectForKey:key];
+    [[FZSettings defaults] setObject:all forKey:kReadyKey];
+}
+
+static void forgetReadyForAlbum(NSString *album) {
+    NSString *suffix = [@"|" stringByAppendingString:album ?: @""];
+    for (NSString *key in sReady.allKeys) if ([key hasSuffix:suffix]) [sReady removeObjectForKey:key];
+    for (NSString *key in [[FZSettings defaults] dictionaryForKey:kReadyKey].allKeys) if ([key hasSuffix:suffix]) persistReady(key, nil);
+    for (NSString *key in sMatches.allKeys) if ([key hasSuffix:suffix]) [sMatches removeObjectForKey:key];
+}
 
 void FZRAnimatedCoverFor(NSString *artist, NSString *album, void (^completion)(NSURL *file)) {
     if (!FZRAnimatedCoversConfigured() || !album.length || FZRAnimatedCoverOff(album)) { completion(nil); return; }
     NSString *key = [NSString stringWithFormat:@"%@|%@", artist ?: @"", album];
-    NSURL *known = sReady[key];
-    if (known && [NSFileManager.defaultManager fileExistsAtPath:known.path]) { completion(known); return; }
+    NSURL *known = sReady[key] ?: persistedReady(key);
+    if (known && [NSFileManager.defaultManager fileExistsAtPath:known.path]) {
+        if (!sReady) sReady = [NSMutableDictionary dictionary];
+        sReady[key] = known;
+        completion(known);
+        return;
+    }
     NSString *chosen = FZRAnimatedCoverChosenFile(album);
     listFolder(NO, ^(NSDictionary<NSString *, NSURL *> *files) {
         void (^use)(NSString *) = ^(NSString *name) {
             NSURL *remote = name ? files[name] : nil;
             if (!remote) { completion(nil); return; }
             fetchAndPrepare(remote, name, ^(NSURL *file) {
-                if (file) { if (!sReady) sReady = [NSMutableDictionary dictionary]; sReady[key] = file; }
+                if (file) { if (!sReady) sReady = [NSMutableDictionary dictionary]; sReady[key] = file; persistReady(key, file); }
                 completion(file);
             });
         };
@@ -426,6 +459,7 @@ static void forgetList(void) {
     sListedAt = nil;
     [sMatches removeAllObjects];
     [sReady removeAllObjects];
+    [[FZSettings defaults] removeObjectForKey:kReadyKey];
     [NSNotificationCenter.defaultCenter postNotificationName:FZRAnimatedCoversDidChangeNotification object:nil];
 }
 
@@ -444,7 +478,20 @@ static void forgetList(void) {
 
 static NSMutableDictionary<NSURL *, FZRCoverLoop *> *sLoops;
 
+// Out of the app every loop is paused, and played again on the way back by the views showing it: left running, a
+// muted video's clock kept going while iOS drew nothing, and it raced to catch up for a second on return (device).
+static void watchAppState(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil
+                                                         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            for (FZRCoverLoop *loop in sLoops.allValues) [loop.player pause];
+        }];
+    });
+}
+
 static FZRCoverLoop *loopFor(NSURL *file) {
+    watchAppState();
     if (!sLoops) sLoops = [NSMutableDictionary dictionary];
     FZRCoverLoop *loop = sLoops[file];
     if (!loop) {
@@ -483,6 +530,35 @@ static UIImage *posterImage(NSURL *file) {
     return image;
 }
 
+// The playing song's cover, loaded as the song starts: its player made and its item read, its first frame in memory,
+// so opening the player shows the video at once rather than the still cover first (device, build 57).
+static FZRCoverLoop *sWarm;
+static NSString *sWarmKey;
+
+static void warmCurrentCover(void) {
+    if (!FZRAnimatedCoversConfigured()) return;
+    NSDictionary *info = FZNowPlayingInfo();
+    NSString *album = [info[MPMediaItemPropertyAlbumTitle] isKindOfClass:NSString.class] ? info[MPMediaItemPropertyAlbumTitle] : nil;
+    id artistValue = info[MPMediaItemPropertyAlbumArtist] ?: info[MPMediaItemPropertyArtist];
+    NSString *artist = [artistValue isKindOfClass:NSString.class] ? artistValue : nil;
+    if (!album.length) return;
+    NSString *key = [NSString stringWithFormat:@"%@|%@", artist ?: @"", album];
+    if ([key isEqualToString:sWarmKey]) return;
+    sWarmKey = key;
+    FZRAnimatedCoverFor(artist, album, ^(NSURL *file) {
+        if (![key isEqualToString:sWarmKey]) return;
+        if (sWarm) sWarm.users = MAX(0, sWarm.users - 1);
+        sWarm = file ? loopFor(file) : nil;
+        if (sWarm) sWarm.users++;   // kept among the loops while its song plays
+        if (file) posterImage(file);
+    });
+}
+
+void FZRInstallAnimatedCoverWarmUp(void) {
+    [NSNotificationCenter.defaultCenter addObserverForName:FZNowPlayingDidChangeNotification object:nil
+                                                     queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { warmCurrentCover(); }];
+}
+
 #pragma mark - the view
 
 @implementation FZRAnimatedCoverView {
@@ -490,6 +566,7 @@ static UIImage *posterImage(NSURL *file) {
     AVPlayerLayer *_layer;
     UIImageView *_poster;
     BOOL _visible;
+    CFTimeInterval _asked;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -536,6 +613,7 @@ static UIImage *posterImage(NSURL *file) {
     if (!file) { [self stop]; return; }
     if ([file isEqual:_file]) { [self resume]; return; }
     [self release:_loop];
+    _asked = CACurrentMediaTime();
     _file = [file copy];
     _loop = loopFor(file);
     _loop.users++;
@@ -569,6 +647,12 @@ static UIImage *posterImage(NSURL *file) {
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_layer.readyForDisplay && self->_asked > 0) {
+            FZLog("animated covers: first frame %.0f ms after asked (%@, poster %d)", (CACurrentMediaTime() - self->_asked) * 1000,
+                  self->_file.lastPathComponent.length > 40 ? [self->_file.lastPathComponent substringFromIndex:self->_file.lastPathComponent.length - 40] : self->_file.lastPathComponent,
+                  self->_poster.image != nil);
+            self->_asked = 0;
+        }
         if (self->_layer.readyForDisplay && self->_file && self.alpha < 1) [UIView animateWithDuration:0.25 animations:^{ self.alpha = 1; }];
     });
 }

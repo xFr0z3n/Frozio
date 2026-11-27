@@ -78,6 +78,18 @@ static id fz_dataTaskURLHandler(id self, SEL _cmd, NSURL *url, id handler) {
 // task, however made, starts with -resume.
 static void fz_resume(NSURLSessionTask *self, SEL _cmd) {
     learn(self.originalRequest.URL ?: self.currentRequest.URL, "-[NSURLSessionTask resume]");
+#ifdef FROZIO_DEBUG
+    NSURLRequest *r = self.originalRequest;
+    NSString *path = r.URL.path;
+    if ([path containsString:@"/rest/reportPlayback"] || [path containsString:@"/rest/scrobble"]) {
+        NSMutableArray *q = [NSMutableArray array];
+        for (NSURLQueryItem *item in [NSURLComponents componentsWithURL:r.URL resolvingAgainstBaseURL:NO].queryItems) {
+            if (![@[@"u", @"t", @"s", @"p", @"apiKey"] containsObject:item.name]) [q addObject:[NSString stringWithFormat:@"%@=%@", item.name, item.value]];
+        }
+        NSString *body = r.HTTPBody.length ? [[NSString alloc] initWithData:r.HTTPBody encoding:NSUTF8StringEncoding] : @"";
+        FZLog("server: %@ %@ %@ body=%@", r.HTTPMethod, path.lastPathComponent, [q componentsJoinedByString:@"&"], body.length > 300 ? [body substringToIndex:300] : body);
+    }
+#endif
     ((void (*)(id, SEL))fz_origResume)(self, _cmd);
 }
 

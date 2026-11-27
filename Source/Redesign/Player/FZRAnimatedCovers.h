@@ -34,6 +34,8 @@ NSString *FZRAnimatedCoverChosenFile(NSString *album);
 void FZRSetAnimatedCoverChosenFile(NSString *album, NSString *fileName);
 /// Every video in the folder, sorted.
 void FZRAnimatedCoverFileNames(void (^completion)(NSArray<NSString *> *names));
+/// Loads the playing song's cover as each song starts (call once at launch).
+void FZRInstallAnimatedCoverWarmUp(void);
 /// Downloads and prepares an album's cover ahead of time, so it shows at once when asked for.
 void FZRAnimatedCoverPrefetch(NSString *artist, NSString *album);
 /// The album's animated cover as a local file, downloading it the first time; nil when there is none. Main thread.

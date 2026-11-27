@@ -57,6 +57,13 @@ UIView *FZRNaviMusMiniBand(UITabBarController *tabs);
 void FZRSetNaviMusMiniHidden(UITabBarController *tabs, BOOL hidden);
 /// Hides NaviMus's mini player again now and once a page change has settled (it can draw a new one then).
 void FZRRecheckNaviMusMini(void);
+extern NSString *const FZRKeyTabsFirstPage;   // "fz.redesign.tabsFirstPage": a tab tap opens its first page
+/// Hooks tab taps (FZRTabReset.m).
+void FZRInstallTabReset(void);
+/// Closes NaviMus's own player if it's open without Frozio having shown it. YES if closed.
+BOOL FZRCloseStrayNaviMusPlayer(UITabBarController *tabs);
+/// The same over the next few seconds (a sheet or an app switch may hold it open a moment).
+void FZRCloseStrayNaviMusPlayerSoon(UITabBarController *tabs);
 /// Whether NaviMus's own player is open on screen because Frozio showed it.
 BOOL FZRNaviMusPlayerShown(void);
 /// Shows NaviMus's own player as it is (the queue, ratings, what Frozio hasn't rebuilt). Frozio's bar steps aside
