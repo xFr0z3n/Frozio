@@ -218,7 +218,14 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     _fades.userInteractionEnabled = NO;
     [self addSubview:_fades];
     _scrim = [CAGradientLayer layer];
-    _scrim.colors = @[(id)[UIColor colorWithWhite:0 alpha:kTopScrimAlpha].CGColor, (id)UIColor.clearColor.CGColor];
+    NSMutableArray *scrimColors = [NSMutableArray array], *scrimLocations = [NSMutableArray array];
+    for (int i = 0; i <= 12; i++) {   // eased too, for the same reason
+        CGFloat t = i / 12.0, eased = t * t * (3 - 2 * t);
+        [scrimColors addObject:(id)[UIColor colorWithWhite:0 alpha:kTopScrimAlpha * (1 - eased)].CGColor];
+        [scrimLocations addObject:@(t)];
+    }
+    _scrim.colors = scrimColors;
+    _scrim.locations = scrimLocations;
     [_fades.layer addSublayer:_scrim];
     _dissolve = [CAGradientLayer layer];
     [_fades.layer addSublayer:_dissolve];
@@ -242,7 +249,17 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
 
 - (void)setFieldColor:(UIColor *)fieldColor {
     _fieldColor = fieldColor;
-    _dissolve.colors = @[(id)[fieldColor colorWithAlphaComponent:0].CGColor, (id)fieldColor.CGColor];
+    // Eased (smoothstep), not linear: a linear fade stops changing abruptly where it meets the field, and the eye
+    // reads that kink as a faint line (measured in the user's screenshot, build 70). Smoothstep's slope is zero at both
+    // ends, so the fade starts and settles without an edge.
+    NSMutableArray *colors = [NSMutableArray array], *locations = [NSMutableArray array];
+    for (int i = 0; i <= 16; i++) {
+        CGFloat t = i / 16.0, eased = t * t * (3 - 2 * t);
+        [colors addObject:(id)[fieldColor colorWithAlphaComponent:eased].CGColor];
+        [locations addObject:@(t)];
+    }
+    _dissolve.colors = colors;
+    _dissolve.locations = locations;
     _play.contentColor = fieldColor;
 }
 
@@ -791,9 +808,23 @@ static NSString *string(id value) {
     if (!path) return;
     NSString *title = string(_songs[(NSUInteger)path.row][@"title"]);
     CGPoint inWindow = [sender convertPoint:CGPointMake(CGRectGetMidX(sender.bounds), CGRectGetMidY(sender.bounds)) toView:self.view.window];
-    if (!FZRPressNaviMusControl(_naviMusPage, title, @[@"More"], inWindow)) {
-        [self report:@"open the song's menu" ok:NO why:@"NaviMus's ⋯ for this song wasn't found on its album page."];
-    }
+    // Asked again for up to 2 s while NaviMus is still loading its page, as a song tap is.
+    __weak typeof(self) weakSelf = self;
+    __block NSUInteger tries = 0;
+    __block void (^attempt)(void);
+    attempt = ^{
+        typeof(self) page = weakSelf;
+        if (!page) { attempt = nil; return; }
+        if (FZRPressNaviMusControl(page->_naviMusPage, title, @[@"More"], inWindow)) { attempt = nil; return; }
+        if (++tries < 7) {
+            void (^again)(void) = attempt;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), again);
+            return;
+        }
+        attempt = nil;
+        [page report:@"open the song's menu" ok:NO why:@"NaviMus's ⋯ for this song wasn't found on its album page."];
+    };
+    attempt();
 }
 
 - (void)openArtist {

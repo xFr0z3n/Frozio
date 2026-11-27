@@ -16,6 +16,7 @@
 #import "Core/FZRemote.h"
 #import "Core/FZHook.h"
 #import "Core/FZLog.h"
+#import "Redesign/Data/FZServer.h"
 
 NSString *const FZRKeyPlayerRebuilt = @"fz.redesign.player";
 NSString *const FZRKeyMiniPlayPause = @"fz.redesign.mini.playPause";
@@ -114,6 +115,7 @@ static void placeBar(UITabBarController *tabs);
     FZRMiniProgress *_progress;
     NSTimer *_timer;
     NSString *_artworkSong;
+    NSString *_serverCoverSong;   // the song whose cover was asked of the server
 }
 static char kBarGlassKey;
 
@@ -245,6 +247,24 @@ static char kBarGlassKey;
             _artwork.image = image;
         }
         _artworkSong = image ? song : nil;
+    }
+    // NaviMus sometimes hands the system no picture (back in the app, or after iOS relaunched it): the mini player was
+    // an empty grey circle (the user's screenshot, build 70). The cover then comes from the server, as Frozio's pages
+    // load theirs.
+    if (!_artworkSong && song.length && ![song isEqualToString:_serverCoverSong]) {
+        _serverCoverSong = song;
+        NSDictionary *current = FZRNaviMusQueue()[@"current"];
+        NSString *coverID = [current isKindOfClass:NSDictionary.class] && [current[@"id"] isEqual:song] && [current[@"coverArt"] isKindOfClass:NSString.class]
+            ? current[@"coverArt"] : song;
+        __weak typeof(self) weakSelf = self;
+        FZServerImage(FZServerCoverURL(coverID, (NSInteger)(kArtwork * 3)), ^(UIImage *cover) {
+            typeof(self) bar = weakSelf;
+            if (!bar || !cover || bar->_artworkSong) return;
+            NSString *now = FZNowPlayingSongID() ?: bar->_title.text;
+            if (![now isEqualToString:song]) return;
+            bar->_artwork.image = cover;
+            FZLog("mini player: cover from the server for %@ (Now Playing had none)", song);
+        });
     }
     _download.hidden = !FZEnabled(FZRKeyMiniDownload);
     _previous.hidden = !FZHidden(FZRKeyMiniPrevious);
