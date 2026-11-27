@@ -192,6 +192,32 @@ static UIScrollView *mainListOf(UIView *root) {
     return best;
 }
 
+// The centre of the UIKit button SwiftUI made for a control near `point` (window coordinates), else `point`. A row's
+// "More" is a 20 pt button whose accessibility point lies 6 pt to its left, so the tap went to the row and no menu
+// opened (device, build 62: tap at x 347.7, button at 354-374).
+static CGPoint buttonCentreNear(UIView *root, UIWindow *window, CGPoint point) {
+    UIView *best = nil;
+    CGFloat bestDistance = CGFLOAT_MAX;
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:root];
+    while (queue.count) {
+        UIView *view = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if (objc_getAssociatedObject(view, &kOverlayKey)) continue;
+        if ([NSStringFromClass(view.class) containsString:@"ViewBasedUIButton"] && !view.hidden) {
+            CGRect frame = [view convertRect:view.bounds toView:window];
+            if (CGRectContainsPoint(CGRectInset(frame, -16, -8), point)) {
+                CGFloat dx = CGRectGetMidX(frame) - point.x, dy = CGRectGetMidY(frame) - point.y;
+                CGFloat distance = dx * dx + dy * dy;
+                if (distance < bestDistance) { bestDistance = distance; best = view; }
+            }
+        }
+        [queue addObjectsFromArray:view.subviews];
+    }
+    if (!best) return point;
+    CGRect frame = [best convertRect:best.bounds toView:window];
+    return CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame));
+}
+
 static CGPoint activationPointIn(UIWindow *window, id element) {
     CGPoint screen = [element accessibilityActivationPoint];
     return [window convertPoint:screen fromCoordinateSpace:window.screen.coordinateSpace];
@@ -324,6 +350,7 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
             FZLogError("redesign: NaviMus control %@ is off screen at %@", describe(element), NSStringFromCGPoint(point));
             return;
         }
+        point = buttonCentreNear(root, window, point);
         done = FZRTapHeld(window, point, 0.08);   // held like a finger: SwiftUI let instant taps on its menus go by (build 61)
         FZLog("redesign: NaviMus control %@ tapped=%d at %@", describe(element), done, NSStringFromCGPoint(point));
     });
