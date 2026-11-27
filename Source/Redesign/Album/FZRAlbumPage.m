@@ -187,6 +187,7 @@ static const CGFloat kScrollBlur = 24;   // the cover's blur once half the hero 
 
 @implementation FZRAlbumHeader {
     CAGradientLayer *_scrim, *_dissolve;
+    UIView *_fades;   // the scrim and the dissolve, over the picture and never blurred with it
 }
 
 static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
@@ -210,11 +211,17 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     [_picture insertSubview:_motion atIndex:0];
     [_motion.layer removeFromSuperlayer];
     [_picture.layer insertSublayer:_motion.layer atIndex:0];
+    // The scrim and the dissolve into the field lie over the picture in a view of their own: blurred along with the
+    // picture (scrolling), the dissolve's last rows took the cover's light and ended in a straight line above the
+    // field (the user, build 62). Only the cover and its video are blurred; the fade always ends in the field.
+    _fades = [UIView new];
+    _fades.userInteractionEnabled = NO;
+    [self addSubview:_fades];
     _scrim = [CAGradientLayer layer];
     _scrim.colors = @[(id)[UIColor colorWithWhite:0 alpha:kTopScrimAlpha].CGColor, (id)UIColor.clearColor.CGColor];
-    [_picture.layer addSublayer:_scrim];
+    [_fades.layer addSublayer:_scrim];
     _dissolve = [CAGradientLayer layer];
-    [_picture.layer addSublayer:_dissolve];
+    [_fades.layer addSublayer:_dissolve];
     _title = infoLabel(FZRFont(UIFontTextStyleTitle2, UIFontWeightBold, UIContentSizeCategoryExtraLarge), FZRPrimary(), 2);
     _title.accessibilityTraits = UIAccessibilityTraitHeader;
     _artist = infoLabel(FZRFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), FZRSecondary(), 1);
@@ -277,6 +284,7 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     if (!_picture.layer.animationKeys.count && CGRectGetMinY(_picture.frame) >= 0) _picture.frame = CGRectMake(0, 0, width, hero);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    _fades.frame = _picture.frame;
     _scrim.frame = CGRectMake(0, 0, _picture.bounds.size.width, MIN(kTopScrim, hero));
     CGFloat fade = round(_picture.bounds.size.height * kDissolve);
     _dissolve.frame = CGRectMake(0, _picture.bounds.size.height - fade, _picture.bounds.size.width, fade);
