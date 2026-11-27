@@ -1,4 +1,4 @@
-// FZRTabReset: a tap on a tab opens that tab's first page (the user's wish, build 57: "clicking home or the others
+// FZRTabReset: a second tap on the tab already shown opens its first page; another tab keeps its place (the user's wish, build 57: "clicking home or the others
 // should send you to its default page"), whether it was already selected or not. NaviMus's tabs are SwiftUI
 // NavigationStacks on UIKit navigation controllers; popping the UIKit stack updates SwiftUI's path as a back swipe
 // does. Only real taps on the tab bar (UIKit's -_tabBarItemClicked:, sent for those alone) are acted on.
@@ -21,15 +21,19 @@ static UINavigationController *navigationIn(UIViewController *vc) {
 }
 
 static void fz_didSelect(UITabBarController *self, SEL _cmd, id sender) {
+    UIViewController *before = self.selectedViewController;
     ((void (*)(id, SEL, id))fz_origDidSelect)(self, _cmd, sender);
     UITabBarItem *item = self.selectedViewController.tabBarItem;
+    FZRCloseStrayNaviMusPlayerSoon(self);
+    // Another tab keeps the page and place it was left on (the user, build 73: "windows should save when switching
+    // tabs, only not on app restart"); a tap on the tab already shown goes to its first page, as iOS does.
+    if (self.selectedViewController != before) return;
     if (![[FZSettings defaults] boolForKey:FZRKeyTabsFirstPage]) return;
     UINavigationController *nav = navigationIn(self.selectedViewController);
     if (nav.viewControllers.count > 1) {
         FZLog("tabs: %@ back to its first page (%lu deep)", item.title, (unsigned long)nav.viewControllers.count);
-        [nav popToRootViewControllerAnimated:NO];
+        [nav popToRootViewControllerAnimated:YES];
     }
-    FZRCloseStrayNaviMusPlayerSoon(self);
 }
 
 void FZRInstallTabReset(void) {

@@ -712,6 +712,7 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
 - (instancetype)init {
     if (!(self = [super initWithNibName:nil bundle:nil])) return nil;
     self.modalPresentationStyle = UIModalPresentationOverFullScreen;
+    self.transitioningDelegate = FZRPlayerTransitioning();   // grows out of the mini player and back into it
     self.modalPresentationCapturesStatusBarAppearance = YES;
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     MPRemoteCommandCenter *center = MPRemoteCommandCenter.sharedCommandCenter;
@@ -722,6 +723,9 @@ static const CGFloat kCoverBelowHeader = 84, kControlsAboveFooter = 70, kTimesAb
 }
 
 - (UIStatusBarStyle)preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
+
+/// The still cover, for the open/close animation.
+- (UIImageView *)coverView { return _cover; }
 
 - (FZRRoundButton *)button:(NSString *)symbol size:(CGFloat)size label:(NSString *)label action:(SEL)action {
     FZRRoundButton *button = [[FZRRoundButton alloc] initWithSymbol:symbol pointSize:size weight:UIImageSymbolWeightRegular label:label];
@@ -936,6 +940,12 @@ static BOOL externalRoute(void) {
     _download.glyph.tintColor = downloaded ? FZRAccent() : FZRPrimary();
     if (![song isEqualToString:_coverSong] || !_cover.image) {
         UIImage *image = FZNowPlayingArtwork(CGSizeMake(600, 600));
+        if (!image) {
+            // NaviMus's copy on the phone when it gives the system no picture (offline, or after a relaunch).
+            NSDictionary *current = FZRNaviMusQueue()[@"current"];
+            id coverID = [current isKindOfClass:NSDictionary.class] && [current[@"id"] isEqual:song] ? current[@"coverArt"] : nil;
+            if ([coverID isKindOfClass:NSString.class]) image = FZRNaviMusCachedCover(coverID);
+        }
         if (image) {
             BOOL animated = _cover.image != nil && self.view.window != nil;
             if (animated) {

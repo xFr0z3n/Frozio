@@ -491,7 +491,10 @@ static void watchAppState(void) {
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil
                                                          queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             sComingBack = YES;
-            for (FZRCoverLoop *loop in sLoops.allValues) [loop.player pause];
+            for (FZRCoverLoop *loop in sLoops.allValues) {
+                if (loop.users > 0) FZLog("animated covers: leaving at %.2f s (rate %.1f)", CMTimeGetSeconds(loop.player.currentTime), loop.player.rate);
+                [loop.player pause];
+            }
         }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
                                                          queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
@@ -500,10 +503,27 @@ static void watchAppState(void) {
                 if (loop.users <= 0) continue;
                 AVQueuePlayer *player = loop.player;
                 sSeeking++;
-                [player seekToTime:player.currentTime toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL done) {
+                CMTime at = player.currentTime;
+                CFTimeInterval started = CACurrentMediaTime();
+                // The frame it stopped on, then the decoder filled (preroll) before the clock runs: a large video's
+                // decoder needs a moment after the app comes back, and with the clock already running the cover
+                // raced to catch up for ~0.6 s (the user's recording, build 73, full-screen lyfëstyle).
+                [player seekToTime:at toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL done) {
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        sSeeking = MAX(0, sSeeking - 1);
-                        if (!sComingBack) [player play];
+                        void (^go)(BOOL) = ^(BOOL prerolled) {
+                            sSeeking = MAX(0, sSeeking - 1);
+                            if (!sComingBack) [player play];
+                            FZLog("animated covers: back at %.2f s, playing after %.0f ms (seek %d, preroll %d)", CMTimeGetSeconds(at),
+                                  (CACurrentMediaTime() - started) * 1000, done, prerolled);
+                        };
+                        if (player.status != AVPlayerStatusReadyToPlay || player.rate != 0) { go(NO); return; }
+                        @try {
+                            [player prerollAtRate:1 completionHandler:^(BOOL finished) {
+                                dispatch_async(dispatch_get_main_queue(), ^{ go(finished); });
+                            }];
+                        } @catch (NSException *e) {
+                            go(NO);
+                        }
                     });
                 }];
             }

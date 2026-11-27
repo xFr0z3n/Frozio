@@ -295,7 +295,8 @@ UIViewController *FZMakeSettingsPage(void) {
     pages.subtitle = @"Buttons, circles and lines of the rebuilt pages.";
     pages.symbol = @"slider.horizontal.3";
 
-    NSMutableArray *appearance = [NSMutableArray arrayWithObjects:redesign, pages, accent, resetAccent, inNaviMus, nil];
+    FZModRow *snappy = FZWithSymbol(FZHideRow(@"Snappy", @"No animations: pages, menus and the player appear at once.", @"fz.snappy"), @"bolt");
+    NSMutableArray *appearance = [NSMutableArray arrayWithObjects:redesign, pages, accent, resetAccent, inNaviMus, snappy, nil];
 #ifdef FROZIO_ICON_PICKER
     // Hidden: setAlternateIconName fails with NSOSStatusErrorDomain -54 on the user's re-signed
     // install, with loose PNGs and with catalog icons alike (docs/FEATURES.md, Known issues).
@@ -310,7 +311,7 @@ UIViewController *FZMakeSettingsPage(void) {
         FZNotedSection(@"Library", @[FZWithSymbol(FZSwitchRow(@"More sort options", @"Year (newest or oldest first) and Favourites for Albums.", FZKeyLibrarySorts), @"arrow.up.arrow.down"),
                                       FZWithSymbol(FZSwitchRow(@"Fix wrong covers in lists", @"NaviMus shows an earlier album's cover on a reused row.", @"fz.fix.coverReuse"), @"photo.on.rectangle")],
                        @"Applies the next time a sort menu opens or a list scrolls."),
-        FZNotedSection(@"Fixes", @[guard, FZWithSymbol(FZSwitchRow(@"Tabs open their first page", @"Tapping Home, Search, Library… goes to that tab's first page, not the page you left there.", FZRKeyTabsFirstPage), @"square.grid.2x2"), FZWithSymbol(FZSwitchRow(@"Start fresh", @"Every launch opens Home, each tab on its first page, instead of where you left off.", FZKeyFreshStart), @"house")], FZRestartNote),
+        FZNotedSection(@"Fixes", @[guard, FZWithSymbol(FZSwitchRow(@"Tap a tab again for its first page", @"Switching tabs keeps each tab where you left it; tapping the tab you're on goes back to its first page.", FZRKeyTabsFirstPage), @"square.grid.2x2"), FZWithSymbol(FZSwitchRow(@"Start fresh", @"Every launch opens Home, each tab on its first page, instead of where you left off.", FZKeyFreshStart), @"house")], FZRestartNote),
     ]];
 #ifdef FROZIO_DEBUG
     FZModRow *share = FZStatActionRow(@"Share log", @"Send frozio.log with AirDrop, Mail, Messages or Save to Files.",
