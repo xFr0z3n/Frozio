@@ -229,6 +229,20 @@ static id plistSafe(id v) {
 }
 
 static Reply screenshot(double scale, double quality, NSString *mode) {
+    if ([mode isEqualToString:@"screen"]) {
+        // UIKit's private whole-screen capture (what the render server shows, video and glass included).
+        UIImage *(*capture)(void) = (UIImage *(*)(void))dlsym(RTLD_DEFAULT, "_UICreateScreenUIImage");
+        UIImage *full = capture ? capture() : nil;
+        if (full) {
+            CGSize size = CGSizeMake(full.size.width * scale, full.size.height * scale);
+            UIGraphicsImageRendererFormat *f = [UIGraphicsImageRendererFormat preferredFormat];
+            f.scale = UIScreen.mainScreen.scale;
+            UIImage *small = [[[UIGraphicsImageRenderer alloc] initWithSize:size format:f] imageWithActions:^(UIGraphicsImageRendererContext *c) {
+                [full drawInRect:CGRectMake(0, 0, size.width, size.height)];
+            }];
+            return (Reply){ UIImageJPEGRepresentation(small, quality), @"image/jpeg", 200 };
+        }
+    }
     UIWindowScene *scene = keyWindow().windowScene;
     CGRect bounds = scene.coordinateSpace.bounds;
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
@@ -260,7 +274,7 @@ static Reply handle(NSString *path, NSDictionary<NSString *, NSString *> *q) {
                        @"state": @(UIApplication.sharedApplication.applicationState),
                        @"screen": NSStringFromCGRect(UIScreen.mainScreen.bounds) });
     }
-    if ([path isEqualToString:@"/shot"]) return screenshot(num(@"scale", 0.5), num(@"q", 0.7), q[@"mode"] ?: @"update");
+    if ([path isEqualToString:@"/shot"]) return screenshot(num(@"scale", 0.5), num(@"q", 0.7), q[@"mode"] ?: @"screen");
     if ([path isEqualToString:@"/tree"]) {
         NSMutableString *out = [NSMutableString string];
         BOOL all = [q[@"all"] isEqualToString:@"1"];

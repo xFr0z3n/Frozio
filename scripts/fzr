@@ -4,7 +4,7 @@
   fzr launch                 terminate + launch the app with the remote token (port 7357 opens)
   fzr kill                   terminate the app (like swiping it away)
   fzr away [secs]            send the app to the background (opens Settings), wait, bring it back
-  fzr shot [file] [scale] [mode]  screenshot -> JPEG (default /tmp/fzr/shot.jpg, scale 0.5; mode update|noupdate|layer)
+  fzr shot [file] [scale] [mode]  screenshot -> JPEG (default /tmp/fzr/shot.jpg, scale 0.5; mode screen|update|noupdate|layer)
   fzr tap X Y [hold]         tap at screen points
   fzr drag X1 Y1 X2 Y2 [dur] drag / swipe
   fzr press LABEL            accessibility-activate the first element whose label contains LABEL
@@ -120,7 +120,7 @@ def main(argv):
     elif cmd == "shot":
         path = a[0] if a else os.path.join(OUT, "shot.jpg")
         params = {"scale": a[1] if len(a) > 1 else "0.5"}
-        if len(a) > 2: params["mode"] = a[2]   # update (default) | noupdate | layer
+        if len(a) > 2: params["mode"] = a[2]   # screen (default) | update | noupdate | layer
         data = request("/shot", params)
         open(path, "wb").write(data)
         print(path)
