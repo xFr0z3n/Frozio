@@ -1,3 +1,4 @@
+#import "Fixes/FZPausedStatus.h"
 #import "FZSettingsPage.h"
 #import "Settings/FZAboutPage.h"
 #import "ArtistBlock/FZArtistBlock.h"
@@ -303,7 +304,7 @@ UIViewController *FZMakeSettingsPage(void) {
     NSMutableArray *sections = [NSMutableArray arrayWithArray:@[
         FZNotedSection(@"Appearance", appearance, @"Changes to NaviMus's tint apply after you restart the app."),
         FZNotedSection(@"Lyrics", @[lockLyrics, FZWithSymbol(FZSwitchRow(@"Look up lyrics online", @"When NaviMus and your server have none: taurus's sources (BiniLyrics, Musixmatch, Unison, NetEase, LRCLIB, QQ Music, KuGou). Sends the song's title, artist, album and length.", @"fz.lyrics.lrclib"), @"magnifyingglass")], @"Applies right away, from the next line."),
-        FZSection(@"Playback", @[blocked]),
+        FZNotedSection(@"Playback", @[blocked, FZWithSymbol(FZChoiceRow(@"Clear paused status", @"Tells your server \"stopped\" after this long paused, so Now Playing (and Discord status plugins) stop showing the paused song. Needs NaviMus's Report playback.", FZKeyPausedStatus, FZPausedStatusChoices(), 2), @"pause.circle")], nil),
         FZNotedSection(@"Library", @[FZWithSymbol(FZSwitchRow(@"More sort options", @"Year (newest or oldest first) and Favourites for Albums.", FZKeyLibrarySorts), @"arrow.up.arrow.down"),
                                       FZWithSymbol(FZSwitchRow(@"Fix wrong covers in lists", @"NaviMus shows an earlier album's cover on a reused row.", @"fz.fix.coverReuse"), @"photo.on.rectangle")],
                        @"Applies the next time a sort menu opens or a list scrolls."),

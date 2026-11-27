@@ -19,6 +19,9 @@
 #import "Core/FZLog.h"
 #import "Redesign/FZRTap.h"
 #import "Diagnostics/FZDebugRemote.h"
+#import "Core/FZRemote.h"
+#import "Prefs/FZSettings.h"
+#import "Redesign/Player/FZRQueue.h"
 
 static const uint16_t kPort = 7357;
 static NSString *sToken;
@@ -333,7 +336,8 @@ static Reply handle(NSString *path, NSDictionary<NSString *, NSString *> *q) {
     if ([path isEqualToString:@"/defaults"]) {
         NSString *prefix = q[@"prefix"] ?: @"fz";
         NSMutableDictionary *out = [NSMutableDictionary dictionary];
-        [NSUserDefaults.standardUserDefaults.dictionaryRepresentation enumerateKeysAndObjectsUsingBlock:^(NSString *k, id v, BOOL *stop) {
+        NSUserDefaults *store = [q[@"std"] isEqualToString:@"1"] ? NSUserDefaults.standardUserDefaults : [FZSettings defaults];
+        [store.dictionaryRepresentation enumerateKeysAndObjectsUsingBlock:^(NSString *k, id v, BOOL *stop) {
             if (!prefix.length || [k hasPrefix:prefix]) out[k] = plistSafe(v);
         }];
         return json(out);
@@ -341,7 +345,7 @@ static Reply handle(NSString *path, NSDictionary<NSString *, NSString *> *q) {
     if ([path isEqualToString:@"/set"]) {
         NSString *key = q[@"k"], *value = q[@"v"], *kind = q[@"type"] ?: @"string";
         if (!key.length) return fail(400, @"k= v= type=bool|int|double|string|delete");
-        NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+        NSUserDefaults *d = [q[@"std"] isEqualToString:@"1"] ? NSUserDefaults.standardUserDefaults : [FZSettings defaults];
         if ([kind isEqualToString:@"delete"]) [d removeObjectForKey:key];
         else if ([kind isEqualToString:@"bool"]) [d setBool:value.boolValue forKey:key];
         else if ([kind isEqualToString:@"int"]) [d setInteger:value.integerValue forKey:key];
@@ -356,6 +360,26 @@ static Reply handle(NSString *path, NSDictionary<NSString *, NSString *> *q) {
         out[@"_playbackState"] = @(MPNowPlayingInfoCenter.defaultCenter.playbackState);
         return json(out);
     }
+    if ([path isEqualToString:@"/cmd"]) {
+        MPRemoteCommandCenter *c = MPRemoteCommandCenter.sharedCommandCenter;
+        NSDictionary *commands = @{ @"play": c.playCommand, @"pause": c.pauseCommand, @"toggle": c.togglePlayPauseCommand,
+                                    @"next": c.nextTrackCommand, @"previous": c.previousTrackCommand };
+        MPRemoteCommand *command = commands[q[@"name"] ?: @""];
+        if (!command) return fail(400, @"name=play|pause|toggle|next|previous\n");
+        return text([NSString stringWithFormat:@"%@ sent=%d\n", q[@"name"], FZRemoteSend(command)]);
+    }
+    if ([path isEqualToString:@"/queue"]) {
+        NSDictionary *queue = FZRNaviMusQueue() ?: @{};
+        NSMutableDictionary *out = [NSMutableDictionary dictionary];
+        [queue enumerateKeysAndObjectsUsingBlock:^(NSString *k, id v, BOOL *stop) {
+            if ([v isKindOfClass:NSArray.class]) {
+                NSMutableArray *titles = [NSMutableArray array];
+                for (id song in v) [titles addObject:[song isKindOfClass:NSDictionary.class] ? ([song[@"title"] description] ?: @"?") : [song description]];
+                out[k] = titles;
+            } else out[k] = plistSafe(v);
+        }];
+        return json(out);
+    }
     if ([path isEqualToString:@"/class"]) return text(describeClass(q[@"name"] ?: @""));
     if ([path isEqualToString:@"/classes"]) return text(listClasses(q[@"filter"]));
     if ([path isEqualToString:@"/notify"]) {
@@ -364,7 +388,7 @@ static Reply handle(NSString *path, NSDictionary<NSString *, NSString *> *q) {
         [NSNotificationCenter.defaultCenter postNotificationName:q[@"name"] object:nil];
         return text(@"posted\n");
     }
-    return fail(404, @"ping shot tree ax vcs hit tap drag press log logclear defaults set nowplaying class classes notify\n");
+    return fail(404, @"ping shot tree ax vcs hit tap drag press log logclear defaults set nowplaying cmd queue class classes notify\n");
 }
 
 static NSDictionary *parseQuery(NSString *query) {
@@ -405,18 +429,26 @@ static void serve(int fd) {
     NSString *path = qm.location == NSNotFound ? target : [target substringToIndex:qm.location];
     NSDictionary *q = parseQuery(qm.location == NSNotFound ? @"" : [target substringFromIndex:qm.location + 1]);
 
-    __block Reply reply;
+    // Plain __block variables: a __block struct holding objects came back dangling after dispatch_sync (device crash).
+    __block NSData *body = nil;
+    __block NSString *type = @"text/plain; charset=utf-8";
+    __block int status = 500;
     if (![q[@"t"] isEqualToString:sToken]) {
-        reply = fail(403, @"token\n");
+        body = [@"token\n" dataUsingEncoding:NSUTF8StringEncoding];
+        status = 403;
     } else {
         dispatch_sync(dispatch_get_main_queue(), ^{
-            @try { reply = handle(path, q); }
-            @catch (NSException *e) { reply = fail(500, [NSString stringWithFormat:@"%@: %@\n", e.name, e.reason]); }
+            @try {
+                Reply r = handle(path, q);
+                body = r.body; type = r.type ?: type; status = r.status;
+            } @catch (NSException *e) {
+                body = [[NSString stringWithFormat:@"%@: %@\n", e.name, e.reason] dataUsingEncoding:NSUTF8StringEncoding];
+            }
         });
     }
-    NSData *body = reply.body ?: [NSData data];
+    if (!body) body = [NSData data];
     NSString *header = [NSString stringWithFormat:@"HTTP/1.1 %d X\r\nContent-Type: %@\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n",
-                        reply.status, reply.type, (unsigned long)body.length];
+                        status, type, (unsigned long)body.length];
     NSData *headerData = [header dataUsingEncoding:NSUTF8StringEncoding];
     writeAll(fd, headerData.bytes, headerData.length);
     writeAll(fd, body.bytes, body.length);

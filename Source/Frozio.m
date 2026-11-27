@@ -6,6 +6,7 @@
 #import "Core/FZVersionGate.h"
 #import "Prefs/FZSettings.h"
 #import "Fixes/FZCloudKitGuard.h"
+#import "Fixes/FZPausedStatus.h"
 #import "Diagnostics/FZScreenCensus.h"
 #import "Diagnostics/FZDebugRemote.h"
 #import "Settings/FZSettingsEntry.h"
@@ -55,5 +56,6 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZInstallLibrarySorts();    // Year and Favourites in NaviMus's album sort menu (reads its switch live)
         FZInstallAudioLevels();     // the music's levels for the visualizer and lyrics shaders
         FZInstallCoverReuseFix();   // NaviMus's grids keep a reused cell's old cover (reads its switch live)
+        FZInstallPausedStatus();    // "stopped" to the server after a while paused (reads its choice live)
     }
 }

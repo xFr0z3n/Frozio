@@ -12,6 +12,7 @@
   fzr log [tail] [grep] | logclear
   fzr logfile [file]         copy Documents/Frozio/frozio.log off the phone (works without the port)
   fzr defaults [prefix] | set KEY VALUE [bool|int|double|string|delete]
+  fzr cmd play|pause|toggle|next|previous | queue
   fzr nowplaying | class NAME | classes FILTER | notify NAME
   fzr get PATH?query         raw request
 Screen points: iPhone 13 is 390x844.
@@ -131,7 +132,9 @@ def main(argv):
         print(request("/press", {"label": " ".join(a)}).decode(), end="")
     elif cmd == "tree":
         print(request("/tree", {"all": "1"} if a[:1] == ["all"] else {}).decode(), end="")
-    elif cmd in ("ax", "vcs", "nowplaying", "logclear", "ping"):
+    elif cmd == "cmd":
+        print(request("/cmd", {"name": a[0]}).decode(), end="")
+    elif cmd in ("ax", "vcs", "nowplaying", "logclear", "ping", "queue"):
         print(request("/" + cmd).decode(), end="")
     elif cmd == "hit":
         print(request("/hit", {"x": a[0], "y": a[1]}).decode(), end="")
