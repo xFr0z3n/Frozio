@@ -10,6 +10,7 @@
   fzr press LABEL            accessibility-activate the first element whose label contains LABEL
   fzr tree [all] | ax | vcs | hit X Y
   fzr log [tail] [grep] | logclear
+  fzr logfile [file]         copy Documents/Frozio/frozio.log off the phone (works without the port)
   fzr defaults [prefix] | set KEY VALUE [bool|int|double|string|delete]
   fzr nowplaying | class NAME | classes FILTER | notify NAME
   fzr get PATH?query         raw request
@@ -68,7 +69,7 @@ def request(path, params=None, timeout=20):
 
 def launch():
     devicectl("device", "process", "launch", "--device", DEVICE, "--terminate-existing", BUNDLE,
-              "-FZRemoteToken", token())
+              "--", "-FZRemoteToken", token())
     for _ in range(40):
         time.sleep(0.5)
         try:
@@ -108,8 +109,13 @@ def main(argv):
         devicectl("device", "process", "launch", "--device", DEVICE, "com.apple.Preferences")
         time.sleep(float(a[0]) if a else 3)
         # Bring it back without restarting (no --terminate-existing).
-        devicectl("device", "process", "launch", "--device", DEVICE, BUNDLE, "-FZRemoteToken", token())
+        devicectl("device", "process", "launch", "--device", DEVICE, BUNDLE, "--", "-FZRemoteToken", token())
         print("back")
+    elif cmd == "logfile":
+        path = a[0] if a else os.path.join(OUT, "frozio.log")
+        devicectl("device", "copy", "from", "--device", DEVICE, "--domain-type", "appDataContainer",
+                  "--domain-identifier", BUNDLE, "--source", "Documents/Frozio/frozio.log", "--destination", path, "-q")
+        print(path)
     elif cmd == "shot":
         path = a[0] if a else os.path.join(OUT, "shot.jpg")
         data = request("/shot", {"scale": a[1] if len(a) > 1 else "0.5"})

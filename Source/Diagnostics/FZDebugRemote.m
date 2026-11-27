@@ -423,8 +423,8 @@ static void stopListening(void) {
     sListen = -1;
 }
 
-static void startListening(void) {
-    stopListening();
+static void startListening(int attempt) {
+    if (sAcceptSource) return;   // already listening
     int fd = socket(AF_INET6, SOCK_STREAM, 0);
     if (fd < 0) { FZLogError("remote: socket failed (%d)", errno); return; }
     int yes = 1, no = 0;
@@ -432,8 +432,13 @@ static void startListening(void) {
     setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &no, sizeof no);
     struct sockaddr_in6 addr = { .sin6_len = sizeof addr, .sin6_family = AF_INET6, .sin6_port = htons(kPort), .sin6_addr = in6addr_any };
     if (bind(fd, (struct sockaddr *)&addr, sizeof addr) != 0 || listen(fd, 8) != 0) {
-        FZLogError("remote: bind/listen on %d failed (%d)", kPort, errno);
+        int err = errno;
         close(fd);
+        if (attempt < 25) {   // the old socket closes on its source's cancel handler, a moment later
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), sQueue, ^{ startListening(attempt + 1); });
+        } else {
+            FZLogError("remote: bind/listen on %d failed (%d)", kPort, err);
+        }
         return;
     }
     sListen = fd;
@@ -455,9 +460,11 @@ void FZInstallDebugRemote(void) {
     sToken = [NSUserDefaults.standardUserDefaults stringForKey:@"FZRemoteToken"];
     if (sToken.length < 8) return; // only when launched with -FZRemoteToken <token>
     sQueue = dispatch_queue_create("com.frozio.remote", DISPATCH_QUEUE_SERIAL);
-    dispatch_async(sQueue, ^{ startListening(); });
-    // iOS reclaims a suspended app's sockets; listen afresh whenever the app comes back.
-    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil
-                                                usingBlock:^(NSNotification *n) { dispatch_async(sQueue, ^{ startListening(); }); }];
+    dispatch_async(sQueue, ^{ startListening(0); });
+    // iOS reclaims a suspended app's sockets: close on the way out, listen afresh when the app is back.
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil
+                                                usingBlock:^(NSNotification *n) { dispatch_async(sQueue, ^{ stopListening(); }); }];
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:nil
+                                                usingBlock:^(NSNotification *n) { dispatch_async(sQueue, ^{ startListening(0); }); }];
 }
 #endif
