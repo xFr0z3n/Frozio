@@ -1,7 +1,7 @@
 // FZRTabReset: a tap on a tab opens that tab's first page (the user's wish, build 57: "clicking home or the others
 // should send you to its default page"), whether it was already selected or not. NaviMus's tabs are SwiftUI
 // NavigationStacks on UIKit navigation controllers; popping the UIKit stack updates SwiftUI's path as a back swipe
-// does. Only real taps on the tab bar (-tabBar:didSelectItem:, which UIKit sends for those alone) are acted on.
+// does. Only real taps on the tab bar (UIKit's -_tabBarItemClicked:, sent for those alone) are acted on.
 #import <UIKit/UIKit.h>
 #import "Core/FZHook.h"
 #import "Core/FZLog.h"
@@ -20,8 +20,9 @@ static UINavigationController *navigationIn(UIViewController *vc) {
     return nil;
 }
 
-static void fz_didSelect(UITabBarController *self, SEL _cmd, UITabBar *bar, UITabBarItem *item) {
-    ((void (*)(id, SEL, id, id))fz_origDidSelect)(self, _cmd, bar, item);
+static void fz_didSelect(UITabBarController *self, SEL _cmd, id sender) {
+    ((void (*)(id, SEL, id))fz_origDidSelect)(self, _cmd, sender);
+    UITabBarItem *item = self.selectedViewController.tabBarItem;
     if (![[FZSettings defaults] boolForKey:FZRKeyTabsFirstPage]) return;
     UINavigationController *nav = navigationIn(self.selectedViewController);
     if (nav.viewControllers.count > 1) {
@@ -32,8 +33,10 @@ static void fz_didSelect(UITabBarController *self, SEL _cmd, UITabBar *bar, UITa
 }
 
 void FZRInstallTabReset(void) {
-    FZHookInstanceMethod(UITabBarController.class, @selector(tabBar:didSelectItem:), "v@:@@", (IMP)fz_didSelect,
-                         &fz_origDidSelect, "redesign.tabs.didSelect");
+    // UIKit's handler for a tap on a tab (iOS 17: -tabBar:didSelectItem: isn't sent to the controller).
+    BOOL ok = FZHookInstanceMethod(UITabBarController.class, NSSelectorFromString(@"_tabBarItemClicked:"), "v@:@", (IMP)fz_didSelect,
+                                   &fz_origDidSelect, "redesign.tabs.clicked");
+    FZLog("tabs: first-page hook %@", ok ? @"installed" : @"NOT installed");
     // Back in the app: NaviMus may bring its own player back up under Frozio's.
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
                                                      queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {

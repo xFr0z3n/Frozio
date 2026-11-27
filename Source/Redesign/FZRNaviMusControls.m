@@ -259,6 +259,17 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
             UIScrollView *list = scrollViewOf(root, [root convertPoint:point fromView:window]) ?: mainListOf(root);
             CGRect visible = list ? [list convertRect:list.bounds toView:window] : window.bounds;
             visible = CGRectIntersection(CGRectInset(visible, 0, 60), window.bounds);
+            // Not behind the bars: a row under the tab bar or the mini player took the tap there (device, build 59:
+            // the Home tab got it). The list's own insets, then the tab bar and the mini player above it.
+            if (list) {
+                visible.origin.y += list.adjustedContentInset.top;
+                visible.size.height -= list.adjustedContentInset.top + list.adjustedContentInset.bottom;
+            }
+            UITabBar *tabBar = page.tabBarController.tabBar;
+            if (tabBar.window && !tabBar.hidden) {
+                CGFloat limit = CGRectGetMinY([tabBar convertRect:tabBar.bounds toView:window]) - 80;
+                if (CGRectGetMaxY(visible) > limit) visible.size.height = MAX(80, limit - CGRectGetMinY(visible));
+            }
             if (list && !CGRectContainsPoint(visible, point)) {
                 CGFloat maxY = MAX(-list.adjustedContentInset.top, list.contentSize.height + list.adjustedContentInset.bottom - list.bounds.size.height);
                 CGFloat y = MIN(maxY, MAX(-list.adjustedContentInset.top, list.contentOffset.y + (point.y - CGRectGetMidY(visible))));
