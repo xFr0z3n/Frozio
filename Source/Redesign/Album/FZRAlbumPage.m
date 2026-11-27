@@ -791,6 +791,13 @@ static NSString *string(id value) {
 - (void)openArtist {
     if (_playlist) return;
     NSString *artistID = string(_album[@"artistId"]);
+    // NaviMus's own artist button in its page's header (its OpenArtistIntent reported success but opened nothing from
+    // Library → Albums on device, build 61).
+    NSString *name = _header.artist.text;
+    if (name.length && FZRActivateNaviMusControl(_naviMusPage, nil, @[name])) {
+        FZLog("redesign album: NaviMus's artist button \"%@\" pressed", name);
+        return;
+    }
     if (!artistID.length) return;
     __weak typeof(self) weakSelf = self;
     FZRNaviMusOpen(@"Artist", artistID, ^(BOOL ok, NSString *why) { [weakSelf report:@"open the artist" ok:ok why:why]; });
@@ -851,15 +858,27 @@ static NSString *string(id value) {
     CGPoint point = cell ? [cell convertPoint:CGPointMake(CGRectGetMidX(cell.bounds), CGRectGetMidY(cell.bounds)) toView:nil] : CGPointZero;
     // On the next turn of the run loop, outside UIKit's delivery of the user's own touch (Frozio's tap shares it).
     __weak typeof(self) weakSelf = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    // NaviMus's page may still be loading its songs just after it opened: asked again for up to 2 s before the song is
+    // played on its own (without the album queued).
+    __block NSUInteger tries = 0;
+    __block void (^attempt)(void);
+    attempt = ^{
         typeof(self) page = weakSelf;
-        if (!page) return;
+        if (!page) { attempt = nil; return; }
         if (title && FZRTapNaviMusRow(page->_naviMusPage, title, point)) {
-            FZLog("redesign album: NaviMus's row \"%@\" tapped", title);
+            FZLog("redesign album: NaviMus's row \"%@\" tapped (try %lu)", title, (unsigned long)tries);
+            attempt = nil;
             return;
         }
+        if (++tries < 7) {
+            void (^again)(void) = attempt;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), again);
+            return;
+        }
+        attempt = nil;
         FZRNaviMusPlay(@"Song", songID, ^(BOOL ok, NSString *why) { [weakSelf report:@"play the song" ok:ok why:why]; });
-    });
+    };
+    dispatch_async(dispatch_get_main_queue(), attempt);
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scroll {
