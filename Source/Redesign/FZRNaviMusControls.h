@@ -55,3 +55,8 @@ void FZRInstallPages(void);
 
 /// NaviMus's own icon for a menu item, once Frozio has read one of its menus holding it; nil before.
 UIImage *FZRNaviMusMenuIcon(NSString *title);
+
+/// A cover NaviMus has cached on disk (its 800, 400 or 200 px copy), nil when it has none. Main thread or not.
+UIImage *FZRNaviMusCachedCover(NSString *coverArtID);
+/// The album's coverArt ID as NaviMus's page holds it (a Library route carries the whole album), nil when unknown.
+NSString *FZRNaviMusPageCoverArt(UIViewController *page);

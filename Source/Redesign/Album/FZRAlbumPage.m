@@ -464,6 +464,7 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
 @end
 
 @implementation FZRAlbumPage {
+    NSString *_shownCover;   // the coverArt whose picture the hero shows
     NSString *_albumID;    // the album's, or the playlist's
     BOOL _playlist;
     __weak UIViewController *_naviMusPage;
@@ -539,6 +540,16 @@ static UILabel *infoLabel(UIFont *font, UIColor *color, NSInteger lines) {
     _nowPlayingObserver = [NSNotificationCenter.defaultCenter addObserverForName:FZNowPlayingDidChangeNotification object:nil
         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { [weakSelf showPlayback]; }];
     [self applyOptions];
+    // The cover NaviMus already has on disk, at once: the page slides in with its picture rather than a black hero
+    // that fills a moment later (the user's recording, build 73).
+    NSString *instantCover = _playlist ? nil : FZRNaviMusPageCoverArt(_naviMusPage);
+    UIImage *cached = FZRNaviMusCachedCover(instantCover);
+    if (cached) {
+        _header.picture.image = cached;
+        _shownCover = instantCover;
+        [_field setArtwork:cached identity:instantCover animated:NO];
+    }
+    FZLog("redesign album: instant cover %@ (%@)", cached ? @"from NaviMus's cache" : @"none", instantCover ?: @"no coverArt on the page");
     [self load];
     FZLog("redesign album: %@ page for %@", self.kind, _albumID);
     FZLog("redesign album: page for %@ (Reduce Motion %d, Reduce Transparency %d)", _albumID, FZRReduceMotion(), FZRReduceTransparency());
@@ -661,13 +672,26 @@ static NSString *string(id value) {
 
     NSString *cover = string(album[@"coverArt"]) ?: _albumID;
     CGFloat pixels = self.view.bounds.size.width * kHeroAspect * UIScreen.mainScreen.scale;
+    if (![cover isEqualToString:_shownCover]) {
+        UIImage *cached = FZRNaviMusCachedCover(cover);
+        if (cached) {
+            _header.picture.image = cached;
+            _shownCover = cover;
+            [_field setArtwork:cached identity:cover animated:NO];
+        }
+    }
     __weak typeof(self) weakSelf = self;
     FZServerImage(FZServerCoverURL(cover, (NSInteger)MIN(pixels, 1500)), ^(UIImage *image) {
         typeof(self) page = weakSelf;
         if (!page || !image) return;
-        [UIView transitionWithView:page->_header.picture duration:FZRCrossfade options:UIViewAnimationOptionTransitionCrossDissolve
-                        animations:^{ page->_header.picture.image = image; } completion:nil];
-        [page->_field setArtwork:image identity:cover animated:YES];
+        if ([cover isEqualToString:page->_shownCover]) {
+            page->_header.picture.image = image;   // the same picture, sharper: no crossfade
+        } else {
+            [UIView transitionWithView:page->_header.picture duration:FZRCrossfade options:UIViewAnimationOptionTransitionCrossDissolve
+                            animations:^{ page->_header.picture.image = image; } completion:nil];
+            [page->_field setArtwork:image identity:cover animated:YES];
+        }
+        page->_shownCover = cover;
     });
 }
 

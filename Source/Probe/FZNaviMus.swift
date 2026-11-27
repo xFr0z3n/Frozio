@@ -31,6 +31,25 @@ public final class FZNaviMus: NSObject {
         return nil
     }
 
+    /// The first string field named `field` anywhere inside a NaviMus page's root view (breadth first, a few levels
+    /// deep): e.g. the album's "coverArt" in a Library route, before Frozio has asked the server for the album.
+    @objc public static func pageDeepString(_ controller: UIViewController, field: String) -> String? {
+        guard let host = controller as? UIHostingController<AnyView>, let root = FZProbe.appValue(in: host.rootView) else { return nil }
+        var level: [Any] = [root]
+        for _ in 0..<8 {
+            var next: [Any] = []
+            for value in level {
+                for child in Mirror(reflecting: value).children {
+                    if child.label == field || child.label == "_" + field, let text = child.value as? String, !text.isEmpty { return text }
+                    next.append(child.value)
+                }
+            }
+            if next.isEmpty || next.count > 4000 { return nil }
+            level = next
+        }
+        return nil
+    }
+
     /// NaviMus's module, then the host app's own (the harness's stand-in intents).
     private static let modules = ["Arpeggi", ProcessInfo.processInfo.processName]
 

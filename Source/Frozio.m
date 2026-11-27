@@ -18,6 +18,7 @@
 #import "Redesign/Player/FZRPlayer.h"
 #import "Redesign/FZRLibrarySorts.h"
 void FZInstallCoverReuseFix(void);
+void FZInstallSnappy(void);
 extern NSString *const FZKeyCoverReuseFix;
 #import "Redesign/Data/FZServer.h"
 #import "Lyrics/FZLockScreenLyrics.h"
@@ -60,6 +61,7 @@ __attribute__((constructor)) static void FrozioInit(void) {
         FZInstallLibrarySorts();    // Year and Favourites in NaviMus's album sort menu (reads its switch live)
         FZInstallAudioLevels();     // the music's levels for the visualizer and lyrics shaders
         FZInstallCoverReuseFix();   // NaviMus's grids keep a reused cell's old cover (reads its switch live)
+        FZInstallSnappy();          // "Snappy": every animation done within a frame (reads its switch live)
         FZInstallPausedStatus();    // "stopped" to the server after a while paused (reads its choice live)
     }
 }

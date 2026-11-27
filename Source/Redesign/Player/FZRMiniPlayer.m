@@ -17,6 +17,7 @@
 #import "Core/FZHook.h"
 #import "Core/FZLog.h"
 #import "Redesign/Data/FZServer.h"
+#import "Redesign/FZRNaviMusControls.h"
 
 NSString *const FZRKeyPlayerRebuilt = @"fz.redesign.player";
 NSString *const FZRKeyMiniPlayPause = @"fz.redesign.mini.playPause";
@@ -117,6 +118,9 @@ static void placeBar(UITabBarController *tabs);
     NSString *_artworkSong;
     NSString *_serverCoverSong;   // the song whose cover was asked of the server
 }
+
+/// The cover, for the player's open/close animation.
+- (UIImageView *)artworkView { return _artwork; }
 static char kBarGlassKey;
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -256,15 +260,23 @@ static char kBarGlassKey;
         NSDictionary *current = FZRNaviMusQueue()[@"current"];
         NSString *coverID = [current isKindOfClass:NSDictionary.class] && [current[@"id"] isEqual:song] && [current[@"coverArt"] isKindOfClass:NSString.class]
             ? current[@"coverArt"] : song;
-        __weak typeof(self) weakSelf = self;
-        FZServerImage(FZServerCoverURL(coverID, (NSInteger)(kArtwork * 3)), ^(UIImage *cover) {
-            typeof(self) bar = weakSelf;
-            if (!bar || !cover || bar->_artworkSong) return;
-            NSString *now = FZNowPlayingSongID() ?: bar->_title.text;
-            if (![now isEqualToString:song]) return;
-            bar->_artwork.image = cover;
-            FZLog("mini player: cover from the server for %@ (Now Playing had none)", song);
-        });
+        // NaviMus's own copy on the phone first: the server may be out of reach (the user's grey circle came while
+        // the server's name didn't resolve, device log build 73).
+        UIImage *cached = FZRNaviMusCachedCover(coverID);
+        if (cached) {
+            _artwork.image = cached;
+            FZLog("mini player: cover from NaviMus's cache for %@ (Now Playing had none)", song);
+        } else {
+            __weak typeof(self) weakSelf = self;
+            FZServerImage(FZServerCoverURL(coverID, (NSInteger)(kArtwork * 3)), ^(UIImage *cover) {
+                typeof(self) bar = weakSelf;
+                if (!bar || !cover || bar->_artworkSong) return;
+                NSString *now = FZNowPlayingSongID() ?: bar->_title.text;
+                if (![now isEqualToString:song]) return;
+                bar->_artwork.image = cover;
+                FZLog("mini player: cover from the server for %@ (Now Playing had none)", song);
+            });
+        }
     }
     _download.hidden = !FZEnabled(FZRKeyMiniDownload);
     _previous.hidden = !FZHidden(FZRKeyMiniPrevious);

@@ -42,6 +42,8 @@ BOOL FZRPlayerActive(void);
 /// The tab bar controller Frozio's mini player sits on, and that bar (nil before the first song).
 UITabBarController *FZRPlayerTabs(void);
 UIView *FZRPlayerMiniBar(void);
+/// The player's open/close animation (FZRPlayerTransition.m).
+id<UIViewControllerTransitioningDelegate> FZRPlayerTransitioning(void);
 
 /// Opens Frozio's player over the app.
 void FZRPresentPlayer(void);

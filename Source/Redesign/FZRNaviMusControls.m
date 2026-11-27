@@ -718,9 +718,14 @@ void FZRSetNaviMusBarHidden(UIViewController *page, BOOL hidden, id<UIViewContro
     UINavigationBar *bar = page.navigationController.navigationBar;
     if (!bar) return;
     if (hidden) {
-        applyHidden(bar, YES);   // gone from the start of the push, never drawn over the cover
-        [transition animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
-            if (context.isCancelled) applyHidden(bar, NO);
+        if (!transition) { applyHidden(bar, YES); return; }
+        // Faded out in step with the push, as UIKit does for a page with a see-through bar: hidden at once, the old
+        // page's bar vanished while that page was still on screen (the user's recording, build 73).
+        bar.alpha = 1;
+        [transition animateAlongsideTransition:^(id context) { bar.alpha = 0; }
+                                    completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+            bar.alpha = 1;
+            applyHidden(bar, !context.isCancelled);
         }];
         return;
     }
@@ -820,4 +825,43 @@ void FZRInstallPages(void) {
     if (!barLayout) FZLogError("redesign: NaviMus's bar may show through (layout hook missing)");
     FZLog("redesign: pages %@ (push=%d stack=%d layout=%d)", (push || set) && layout ? @"installed" : @"NOT installed", push, set, layout);
     (void)layout;
+}
+
+#pragma mark - NaviMus's cover cache
+
+#import <CommonCrypto/CommonDigest.h>
+
+// NaviMus keeps the covers it has shown in Application Support/Arpeggi/<server>/cover_art/sha256("<coverArt>_<size>").jpeg,
+// at 200, 400 and 800 px (found on device, build 73). Read from there, a page's cover shows at once instead of after
+// a download (the user's recording: a black hero until the cover popped in).
+UIImage *FZRNaviMusCachedCover(NSString *coverArtID) {
+    if (!coverArtID.length) return nil;
+    static NSCache<NSString *, UIImage *> *memory;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ memory = [NSCache new]; memory.countLimit = 30; });
+    UIImage *known = [memory objectForKey:coverArtID];
+    if (known) return known;
+    NSString *support = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *arpeggi = [support stringByAppendingPathComponent:@"Arpeggi"];
+    NSArray *servers = [NSFileManager.defaultManager contentsOfDirectoryAtPath:arpeggi error:nil];
+    for (NSString *size in @[@"800", @"400", @"200"]) {
+        NSData *key = [[NSString stringWithFormat:@"%@_%@", coverArtID, size] dataUsingEncoding:NSUTF8StringEncoding];
+        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+        CC_SHA256(key.bytes, (CC_LONG)key.length, digest);
+        NSMutableString *hex = [NSMutableString string];
+        for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [hex appendFormat:@"%02x", digest[i]];
+        for (NSString *server in servers) {
+            NSString *path = [NSString stringWithFormat:@"%@/%@/cover_art/%@.jpeg", arpeggi, server, hex];
+            UIImage *image = [UIImage imageWithContentsOfFile:path];
+            if (image) { [memory setObject:image forKey:coverArtID]; return image; }
+        }
+    }
+    return nil;
+}
+
+NSString *FZRNaviMusPageCoverArt(UIViewController *page) {
+    Class bridge = NSClassFromString(@"FZNaviMus");
+    SEL sel = NSSelectorFromString(@"pageDeepString:field:");
+    if (!page || ![bridge respondsToSelector:sel]) return nil;
+    return ((NSString *(*)(id, SEL, id, id))objc_msgSend)(bridge, sel, page, @"coverArt");
 }
