@@ -808,9 +808,23 @@ static NSString *string(id value) {
     if (!path) return;
     NSString *title = string(_songs[(NSUInteger)path.row][@"title"]);
     CGPoint inWindow = [sender convertPoint:CGPointMake(CGRectGetMidX(sender.bounds), CGRectGetMidY(sender.bounds)) toView:self.view.window];
-    if (!FZRPressNaviMusControl(_naviMusPage, title, @[@"More"], inWindow)) {
-        [self report:@"open the song's menu" ok:NO why:@"NaviMus's ⋯ for this song wasn't found on its album page."];
-    }
+    // Asked again for up to 2 s while NaviMus is still loading its page, as a song tap is.
+    __weak typeof(self) weakSelf = self;
+    __block NSUInteger tries = 0;
+    __block void (^attempt)(void);
+    attempt = ^{
+        typeof(self) page = weakSelf;
+        if (!page) { attempt = nil; return; }
+        if (FZRPressNaviMusControl(page->_naviMusPage, title, @[@"More"], inWindow)) { attempt = nil; return; }
+        if (++tries < 7) {
+            void (^again)(void) = attempt;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), again);
+            return;
+        }
+        attempt = nil;
+        [page report:@"open the song's menu" ok:NO why:@"NaviMus's ⋯ for this song wasn't found on its album page."];
+    };
+    attempt();
 }
 
 - (void)openArtist {

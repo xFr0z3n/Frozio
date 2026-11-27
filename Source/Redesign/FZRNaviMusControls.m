@@ -269,7 +269,9 @@ BOOL FZRPressNaviMusControl(UIViewController *page, NSString *after, NSArray<NSS
         // A row further down doesn't exist yet: NaviMus's list builds only the rows in its view (device, build 57:
         // songs past the sixth played alone). Its list is scrolled through, a screen at a time from the top, until
         // the row is there.
-        if (sRowTap && !found.count) {
+        // The same for a row's own control (its ⋯): the row has to exist first (the user, build 70: "⋯ for this song
+        // wasn't found" for songs further down, until NaviMus happened to build them).
+        if ((sRowTap || after.length) && !found.count) {
             UIScrollView *list = mainListOf(root);
             if (list) {
                 CGFloat top = -list.adjustedContentInset.top;
